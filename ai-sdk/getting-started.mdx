@@ -1,0 +1,224 @@
+---
+title: Getting Started
+description: Build your first AI agent with the Flowbaker AI SDK
+---
+
+This guide will walk you through creating your first AI agent with the Flowbaker AI SDK.
+
+## Installation
+
+Install the AI SDK in your Go project:
+
+```bash
+go get github.com/flowbaker/flowbaker/pkg/ai-sdk
+```
+
+## Basic Agent Setup
+
+Here's a complete example of creating and using an AI agent:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+)
+
+func main() {
+    // Get API key from environment
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    if apiKey == "" {
+        log.Fatal("OPENAI_API_KEY not set")
+    }
+
+    // Create OpenAI provider
+    model := openai.New(apiKey, "gpt-4o")
+
+    // Create agent with configuration
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+        agent.WithMaxIterations(10),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Chat with the agent (synchronous)
+    result, err := ag.ChatSync(context.Background(), agent.ChatRequest{
+        Prompt:    "What is the capital of France?",
+        SessionID: "user-123",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Print the response
+    fmt.Printf("Response: %s\n", result.Steps[len(result.Steps)-1].Content)
+    fmt.Printf("Total tokens: %d\n", result.TotalUsage.TotalTokens)
+}
+```
+
+## Provider Configuration
+
+### OpenAI
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+
+// Basic setup
+model := openai.New(apiKey, "gpt-4o")
+
+// With custom settings
+model.SetRequestSettings(openai.RequestSettings{
+    Model:       "gpt-4o",
+    Temperature: 0.7,
+    MaxTokens:   2000,
+    TopP:        0.9,
+})
+```
+
+### Anthropic Claude
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/anthropic"
+
+model := anthropic.New(apiKey, "claude-sonnet-4-20250514")
+
+model.SetRequestSettings(anthropic.RequestSettings{
+    Model:       "claude-sonnet-4-20250514",
+    MaxTokens:   4096,
+    Temperature: 0.7,
+})
+```
+
+### Google Gemini
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/gemini"
+
+// Gemini requires context for initialization
+model, err := gemini.New(ctx, apiKey, "gemini-2.5-pro")
+if err != nil {
+    log.Fatal(err)
+}
+
+model.SetRequestSettings(gemini.RequestSettings{
+    Model:           "gemini-2.5-pro",
+    MaxOutputTokens: 8192,
+    Temperature:     0.7,
+})
+```
+
+## Streaming Responses
+
+For real-time streaming responses, use `Chat()` instead of `ChatSync()`:
+
+```go
+stream, err := ag.Chat(context.Background(), agent.ChatRequest{
+    Prompt:    "Tell me a story",
+    SessionID: "user-123",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// Process streaming events
+for event := range stream.EventChan {
+    switch e := event.(type) {
+    case *types.TextDeltaEvent:
+        fmt.Print(e.Delta)
+    case *types.ToolCallCompleteEvent:
+        fmt.Printf("\nTool called: %s\n", e.ToolCall.Name)
+    case *types.StreamEndEvent:
+        fmt.Printf("\nFinished: %s\n", e.Reason)
+    }
+}
+
+// Check for errors
+if err := stream.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+## Agent Options
+
+Configure your agent with these options:
+
+```go
+ag, err := agent.New(
+    // Required: language model
+    agent.WithModel(model),
+    
+    // System prompt for the agent
+    agent.WithSystemPrompt("You are a helpful assistant."),
+    
+    // Maximum reasoning steps (default: 10)
+    agent.WithMaxIterations(15),
+    
+    // Add tools for the agent to use
+    agent.WithTools(weatherTool, calculatorTool),
+    
+    // Memory store for conversation history
+    agent.WithMemory(memoryStore),
+    
+    // Limit conversation history to last N messages
+    agent.WithConversationHistoryLimit(50),
+    
+    // Context for cancellation
+    agent.WithCancelContext(ctx),
+)
+```
+
+## Understanding Steps
+
+Agents work through multiple reasoning steps. Each step represents one interaction with the LLM:
+
+```go
+result, _ := ag.ChatSync(ctx, agent.ChatRequest{
+    Prompt:    "What's 2+2 and what's the weather?",
+    SessionID: "user-123",
+})
+
+// Iterate through all steps
+for _, step := range result.Steps {
+    fmt.Printf("Step %d:\n", step.StepNumber)
+    fmt.Printf("Content: %s\n", step.Content)
+    fmt.Printf("Tool Calls: %d\n", len(step.ToolCalls))
+    fmt.Printf("Tokens: %d\n", step.Usage.TotalTokens)
+}
+```
+
+## Error Handling
+
+Always check for errors:
+
+```go
+ag, err := agent.New(agent.WithModel(model))
+if err != nil {
+    // Handle agent creation error
+    log.Fatal(err)
+}
+
+result, err := ag.ChatSync(ctx, agent.ChatRequest{
+    Prompt:    "Hello",
+    SessionID: "user-123",
+})
+if err != nil {
+    // Handle chat error
+    log.Fatal(err)
+}
+```
+
+## Next Steps
+
+- Learn about [Agent](/ai-sdk/agent) configuration and lifecycle
+- Add [Tools](/ai-sdk/tools) to extend agent capabilities
+- Implement [Memory](/ai-sdk/memory) for persistent conversations
+- See [Examples](/ai-sdk/examples/basic-agent) for more use cases

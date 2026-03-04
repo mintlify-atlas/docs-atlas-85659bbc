@@ -1,0 +1,365 @@
+---
+title: 'Docker Deployment'
+description: 'Deploy Flowbaker executor using Docker and Docker Compose'
+---
+
+## Overview
+
+Flowbaker provides an official Docker image for easy deployment. The executor runs on port 8081 and includes health checks for monitoring.
+
+## Dockerfile
+
+The official Dockerfile uses a multi-stage build to create a minimal, secure image:
+
+```dockerfile
+# Build stage
+FROM golang:1.25.0-alpine AS builder
+
+# Build arguments
+ARG VERSION=dev
+ARG GIT_COMMIT=""
+ARG BUILD_DATE=""
+ARG BUILD_USER=""
+
+# Install git and ca-certificates for dependency fetching
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application with version information
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags "-X github.com/flowbaker/flowbaker/internal/version.Version=${VERSION} \
+              -X github.com/flowbaker/flowbaker/internal/version.GitCommit=${GIT_COMMIT} \
+              -X github.com/flowbaker/flowbaker/internal/version.BuildDate=${BUILD_DATE} \
+              -X github.com/flowbaker/flowbaker/internal/version.BuildUser=${BUILD_USER}" \
+    -o flowbaker ./cmd
+
+# Final stage
+FROM alpine:latest
+
+# Install ca-certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates
+
+# Create app directory and non-root user
+RUN mkdir /app && \
+    addgroup -g 1001 flowbaker && \
+    adduser -D -u 1001 -G flowbaker flowbaker
+
+WORKDIR /app
+
+# Copy the binary from builder stage
+COPY --from=builder /app/flowbaker .
+
+# Change ownership to non-root user
+RUN chown -R flowbaker:flowbaker /app
+
+# Switch to non-root user
+USER flowbaker
+
+# Expose port
+EXPOSE 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+
+# Default command
+CMD ["./flowbaker", "start"]
+```
+
+## Key Features
+
+- **Multi-stage build**: Minimal final image size (~15MB)
+- **Non-root user**: Runs as user `flowbaker` (UID 1001) for security
+- **Health checks**: Built-in health endpoint monitoring
+- **CA certificates**: Included for HTTPS API calls
+- **Port 8081**: Default HTTP server port
+
+## Docker Run
+
+### Basic Usage
+
+```bash
+docker run -d \
+  --name flowbaker-executor \
+  -p 8081:8081 \
+  -v flowbaker-config:/home/flowbaker/.flowbaker \
+  flowbaker/flowbaker:latest
+```
+
+### With Environment Variables
+
+```bash
+docker run -d \
+  --name flowbaker-executor \
+  -p 8081:8081 \
+  -e FLOWBAKER_API_URL=https://api.flowbaker.io \
+  -e FLOWBAKER_EXECUTOR_NAME=my-executor \
+  -e FLOWBAKER_EXECUTOR_ADDRESS=http://localhost:8081 \
+  -v flowbaker-config:/home/flowbaker/.flowbaker \
+  flowbaker/flowbaker:latest
+```
+
+### Interactive First-Time Setup
+
+```bash
+docker run -it \
+  --name flowbaker-executor \
+  -p 8081:8081 \
+  -v flowbaker-config:/home/flowbaker/.flowbaker \
+  flowbaker/flowbaker:latest
+```
+
+## Docker Compose
+
+### Basic Configuration
+
+```yaml
+version: '3.8'
+
+services:
+  flowbaker:
+    image: flowbaker/flowbaker:latest
+    container_name: flowbaker-executor
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - flowbaker-config:/home/flowbaker/.flowbaker
+    environment:
+      - FLOWBAKER_API_URL=https://api.flowbaker.io
+      - FLOWBAKER_EXECUTOR_NAME=my-executor
+      - FLOWBAKER_EXECUTOR_ADDRESS=http://localhost:8081
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  flowbaker-config:
+    driver: local
+```
+
+### Production Configuration
+
+```yaml
+version: '3.8'
+
+services:
+  flowbaker:
+    image: flowbaker/flowbaker:latest
+    container_name: flowbaker-executor
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      - flowbaker-config:/home/flowbaker/.flowbaker
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # If executor needs Docker access
+    environment:
+      - FLOWBAKER_API_URL=https://api.flowbaker.io
+      - FLOWBAKER_EXECUTOR_NAME=production-executor
+      - FLOWBAKER_EXECUTOR_ADDRESS=https://executor.example.com
+      - FLOWBAKER_ENABLE_WORKSPACE_REGISTRATION=true
+    networks:
+      - flowbaker-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  flowbaker-network:
+    driver: bridge
+
+volumes:
+  flowbaker-config:
+    driver: local
+```
+
+## Volume Mounts
+
+### Configuration Persistence
+
+The executor stores its configuration in `~/.flowbaker/config.json`. Mount this directory to persist configuration across container restarts:
+
+```bash
+-v flowbaker-config:/home/flowbaker/.flowbaker
+```
+
+### Configuration File Location
+
+- **Container path**: `/home/flowbaker/.flowbaker/config.json`
+- **Contains**: Executor ID, API keys, workspace assignments, cryptographic keys
+- **Permissions**: Automatically set to `0700` for security
+
+### Backup Configuration
+
+```bash
+# Export volume to backup
+docker run --rm \
+  -v flowbaker-config:/source \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/flowbaker-config-backup.tar.gz -C /source .
+
+# Restore from backup
+docker run --rm \
+  -v flowbaker-config:/target \
+  -v $(pwd):/backup \
+  alpine tar xzf /backup/flowbaker-config-backup.tar.gz -C /target
+```
+
+## Building Custom Image
+
+### Build with Version Tags
+
+```bash
+docker build \
+  --build-arg VERSION=1.0.0 \
+  --build-arg GIT_COMMIT=$(git rev-parse HEAD) \
+  --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+  --build-arg BUILD_USER=$(whoami) \
+  -t flowbaker/flowbaker:1.0.0 \
+  .
+```
+
+### Multi-platform Build
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --build-arg VERSION=1.0.0 \
+  -t flowbaker/flowbaker:1.0.0 \
+  --push \
+  .
+```
+
+## Health Checks
+
+The container includes a built-in health check that calls the `/health` endpoint:
+
+```bash
+# Check health status
+docker inspect --format='{{.State.Health.Status}}' flowbaker-executor
+
+# View health check logs
+docker inspect --format='{{json .State.Health}}' flowbaker-executor | jq
+```
+
+### Health Endpoint Response
+
+```json
+{
+  "status": "healthy",
+  "service": "flowbaker-executor",
+  "version": "1.0.0",
+  "timestamp": "2026-03-04T10:00:00Z"
+}
+```
+
+## Logs
+
+### View Logs
+
+```bash
+# Follow logs
+docker logs -f flowbaker-executor
+
+# View last 100 lines
+docker logs --tail 100 flowbaker-executor
+
+# View logs since timestamp
+docker logs --since 2026-03-04T10:00:00 flowbaker-executor
+```
+
+### Log Format
+
+Flowbaker uses structured logging (zerolog):
+
+```json
+{"level":"info","time":"2026-03-04T10:00:00Z","message":"Starting executor service"}
+{"level":"info","executor_id":"exec_123","api_base_url":"https://api.flowbaker.io","message":"Executor configuration loaded"}
+```
+
+## Troubleshooting
+
+### Container Won't Start
+
+```bash
+# Check container logs
+docker logs flowbaker-executor
+
+# Check if port is already in use
+sudo lsof -i :8081
+
+# Run with interactive mode for debugging
+docker run -it flowbaker/flowbaker:latest sh
+```
+
+### Configuration Issues
+
+```bash
+# Reset configuration
+docker exec flowbaker-executor ./flowbaker reset
+
+# View current configuration
+docker exec flowbaker-executor ./flowbaker status
+```
+
+### Permission Issues
+
+```bash
+# Check volume permissions
+docker run --rm -v flowbaker-config:/config alpine ls -la /config
+
+# Fix permissions if needed
+docker run --rm -v flowbaker-config:/config alpine chown -R 1001:1001 /config
+```
+
+## Security Best Practices
+
+1. **Use named volumes** instead of bind mounts for configuration
+2. **Run as non-root** (already configured in the image)
+3. **Limit container resources**:
+   ```yaml
+   deploy:
+     resources:
+       limits:
+         cpus: '1.0'
+         memory: 512M
+   ```
+4. **Use secrets** for sensitive environment variables:
+   ```yaml
+   secrets:
+     - flowbaker_api_key
+   ```
+5. **Enable read-only root filesystem** where possible:
+   ```yaml
+   read_only: true
+   tmpfs:
+     - /tmp
+   ```
+
+## Next Steps
+
+- [Configure environment variables](/deployment/environment-variables)
+- [Set up systemd service](/deployment/binary)
+- [Configure executor settings](/deployment/configuration)

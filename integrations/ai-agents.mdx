@@ -1,0 +1,260 @@
+---
+title: 'AI Agent Integrations'
+description: 'Build intelligent workflows with AI models and agents'
+---
+
+Flowbaker supports multiple AI providers and a powerful agent framework for building intelligent, tool-using workflows.
+
+## Available AI Integrations
+
+### AI Agent
+
+The **ai_agent** integration provides a tool-based AI agent that can use multiple tools to complete complex tasks.
+
+**Key Features:**
+- Multi-step reasoning
+- Tool selection and execution
+- Conversation memory support
+- Configurable max steps
+
+**Configuration:**
+
+```yaml
+action: execute_agent
+properties:
+  system_prompt: "You are a helpful assistant that can use tools to complete tasks."
+  prompt: "Find the latest GitHub issues and summarize them"
+  max_steps: 10
+  recent_messages_limit: 20
+```
+
+**Use Cases:**
+- Multi-step data processing
+- API orchestration
+- Research and summarization
+- Customer support automation
+
+### OpenAI
+
+Integrate with OpenAI's GPT models for chat completion, text generation, and image creation.
+
+**Credentials:**
+
+```yaml
+api_key: "sk-..."
+```
+
+**Available Actions:**
+
+#### Chat Completion
+
+```yaml
+action: chat_completion
+properties:
+  model: "gpt-5.2"
+  messages:
+    - role: "system"
+      content:
+        - type: "text"
+          text: "You are a helpful assistant."
+    - role: "user"
+      content:
+        - type: "text"
+          text: "Explain quantum computing in simple terms."
+  temperature: 0.7
+  max_tokens: 150
+```
+
+**Supported Models:**
+- GPT-5.2, GPT-5.1, GPT-5 (latest)
+- GPT-4.5, GPT-4.1, GPT-4o
+- O-series: O4 Mini, O3, O3 Mini
+- GPT-3.5 Turbo series
+
+#### Image Generation
+
+```yaml
+action: image_generation
+properties:
+  model: "dall-e-3"
+  prompt: "A futuristic cityscape at sunset with flying vehicles"
+  size: "1024x1024"
+  quality: "hd"
+  style: "vivid"
+```
+
+#### AI Agent Chat
+
+Use OpenAI as an LLM provider for AI agents:
+
+```yaml
+action: ai_agent_chat
+properties:
+  model: "gpt-5.2"
+  temperature: 0.7
+  max_tokens: 2000
+```
+
+### Claude (Anthropic)
+
+Use Anthropic's Claude models for advanced reasoning and long-context understanding.
+
+**Credentials:**
+
+```yaml
+api_key: "sk-ant-..."
+```
+
+**Available Actions:**
+
+#### Send Prompt
+
+```yaml
+action: prompt
+properties:
+  model: "claude-opus-4-5-20251101"
+  prompt: "Analyze this data and provide insights"
+  system_prompt: "You are a data analyst expert."
+  max_tokens: 1024
+```
+
+**Supported Models:**
+- Claude Opus 4.5, Sonnet 4.5, Haiku 4.5 (latest)
+- Claude Opus 4.1, Opus 4, Sonnet 4
+- Claude Sonnet 3.7
+- Claude Haiku 3.5, Haiku 3
+
+#### AI Agent Chat
+
+```yaml
+action: ai_agent_chat
+properties:
+  model: "claude-sonnet-4-5-20250929"
+  temperature: 0.8
+  max_tokens: 2000
+  top_p: 0.95
+  top_k: 50
+```
+
+### Gemini (Google)
+
+Integrate with Google's Gemini models.
+
+**Credentials:**
+
+```yaml
+api_key: "AI..."
+```
+
+### Groq
+
+Fast inference with Groq's optimized infrastructure.
+
+**Credentials:**
+
+```yaml
+api_key: "gsk_..."
+```
+
+### Chat
+
+Generic chat interface for custom LLM integrations.
+
+### Flowbaker Agent Memory
+
+Store and retrieve conversation history for AI agents.
+
+**Use with AI Agents:**
+
+```yaml
+memory_provider: flowbaker_agent_memory
+properties:
+  session_id: "user-123"
+```
+
+## Memory Providers
+
+AI agents can use different memory providers to store conversation history:
+
+### PostgreSQL Memory
+
+```yaml
+memory_provider: postgresql
+action: use_memory
+properties:
+  table_prefix: "ai_memory"
+  session_id: "user-123"
+```
+
+Creates tables:
+- `ai_memory_conversations`
+- `ai_memory_messages`
+
+### Redis Memory
+
+```yaml
+memory_provider: redis
+action: redis_agent_memory
+properties:
+  key_prefix: "agent:"
+  session_id: "user-123"
+  ttl: 3600
+```
+
+## Example: Multi-Step Agent Workflow
+
+```yaml
+nodes:
+  - id: trigger
+    type: webhook
+    
+  - id: agent
+    type: ai_agent
+    action: execute_agent
+    config:
+      llm_provider: openai
+      llm_config:
+        model: "gpt-5.2"
+        temperature: 0.7
+      memory_provider: postgresql
+      memory_config:
+        session_id: "{{trigger.headers.user_id}}"
+      system_prompt: "You are a customer support agent."
+      prompt: "{{trigger.body.message}}"
+      max_steps: 15
+    tools:
+      - github_search_issues
+      - send_slack_message
+      - query_database
+      
+  - id: response
+    type: send_response
+    input: "{{agent.output}}"
+```
+
+## Best Practices
+
+1. **Choose the Right Model**: Use smaller models for simple tasks, larger models for complex reasoning
+2. **Set Token Limits**: Prevent excessive API costs with `max_tokens`
+3. **Use System Prompts**: Guide model behavior with clear system instructions
+4. **Temperature Settings**: Lower (0.2-0.5) for factual tasks, higher (0.7-1.0) for creative tasks
+5. **Memory Management**: Use `recent_messages_limit` to control context size
+6. **Tool Design**: Keep tool descriptions clear and focused
+7. **Error Handling**: Implement fallbacks for API failures
+
+## Rate Limits & Costs
+
+Be aware of provider rate limits:
+
+- **OpenAI**: Varies by model tier and account type
+- **Claude**: Varies by plan
+- **Groq**: High throughput, check current limits
+
+Monitor token usage and implement caching where possible.
+
+## Next Steps
+
+- [AI SDK Agent Documentation](/ai-sdk/agent)
+- [AI SDK Tools](/ai-sdk/tools)
+- [AI SDK Memory](/ai-sdk/memory)
+- [Basic Agent Example](/ai-sdk/examples/basic-agent)

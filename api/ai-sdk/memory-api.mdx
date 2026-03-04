@@ -1,0 +1,258 @@
+---
+title: Memory API
+description: Conversation memory storage interface for AI agents
+---
+
+## Store
+
+The `Store` interface defines how conversation history is stored and retrieved.
+
+```go
+type Store interface {
+    GetConversation(ctx context.Context, filter Filter) (types.Conversation, error)
+    SaveConversation(ctx context.Context, conversation types.Conversation) error
+}
+```
+
+### Methods
+
+<ResponseField name="GetConversation" type="func(ctx, Filter) (Conversation, error)">
+  Retrieves a conversation from storage based on filter criteria
+  
+  **Parameters:**
+  - `ctx` - Context for cancellation
+  - `filter` - Filter criteria for retrieving conversation
+  
+  **Returns:** Complete conversation with messages
+</ResponseField>
+
+<ResponseField name="SaveConversation" type="func(ctx, Conversation) error">
+  Saves or updates a conversation in storage
+  
+  **Parameters:**
+  - `ctx` - Context for cancellation
+  - `conversation` - The conversation to save
+  
+  **Returns:** Error if save fails
+</ResponseField>
+
+## Filter
+
+Criteria for retrieving conversations from memory.
+
+<ParamField path="SessionID" type="string">
+  Filter by session ID (unique identifier for a conversation thread)
+</ParamField>
+
+<ParamField path="UserID" type="string">
+  Filter by user ID (all conversations for a specific user)
+</ParamField>
+
+<ParamField path="Limit" type="int">
+  Number of messages to return (0 = all messages)
+</ParamField>
+
+<ParamField path="Before" type="*int">
+  Get messages with order < this value (cursor-based pagination)
+</ParamField>
+
+### Example
+
+```go
+// Get last 10 messages for a session
+conversation, err := memory.GetConversation(ctx, memory.Filter{
+    SessionID: "session-123",
+    Limit: 10,
+})
+
+// Get all messages for a user
+conversation, err := memory.GetConversation(ctx, memory.Filter{
+    UserID: "user-456",
+    Limit: 0, // All messages
+})
+```
+
+## Conversation
+
+Represents a complete conversation with metadata.
+
+<ParamField path="ID" type="string">
+  Unique identifier for the conversation
+</ParamField>
+
+<ParamField path="SessionID" type="string">
+  Session identifier for grouping related messages
+</ParamField>
+
+<ParamField path="UserID" type="string">
+  ID of the user (optional)
+</ParamField>
+
+<ParamField path="Messages" type="[]types.Message">
+  Array of messages in chronological order
+</ParamField>
+
+<ParamField path="CreatedAt" type="time.Time">
+  When the conversation was created
+</ParamField>
+
+<ParamField path="UpdatedAt" type="time.Time">
+  When the conversation was last updated
+</ParamField>
+
+<ParamField path="Status" type="ConversationStatus">
+  Current status of the conversation
+</ParamField>
+
+<ParamField path="Metadata" type="map[string]interface{}">
+  Custom metadata for the conversation
+</ParamField>
+
+### Methods
+
+<ResponseField name="IsInterrupted()" type="bool">
+  Returns true if conversation is waiting for user input
+</ResponseField>
+
+<ResponseField name="IsCompleted()" type="bool">
+  Returns true if conversation has completed
+</ResponseField>
+
+<ResponseField name="IsFailed()" type="bool">
+  Returns true if conversation failed with an error
+</ResponseField>
+
+<ResponseField name="IsActive()" type="bool">
+  Returns true if conversation is actively running
+</ResponseField>
+
+## ConversationStatus
+
+Enum representing the state of a conversation.
+
+### Constants
+
+- `StatusActive` - Conversation is actively running
+- `StatusCompleted` - Conversation finished successfully
+- `StatusFailed` - Conversation encountered an error
+- `StatusInterrupted` - Conversation paused for user input
+
+## Message
+
+Represents a single message in a conversation.
+
+<ParamField path="ConversationID" type="string">
+  ID of the parent conversation
+</ParamField>
+
+<ParamField path="Role" type="MessageRole">
+  Role of the sender (user, assistant, system, tool)
+</ParamField>
+
+<ParamField path="Content" type="string">
+  Text content of the message
+</ParamField>
+
+<ParamField path="ToolCalls" type="[]types.ToolCall">
+  Tool calls made by the assistant (if any)
+</ParamField>
+
+<ParamField path="ToolResults" type="[]types.ToolResult">
+  Results from tool executions (if any)
+</ParamField>
+
+<ParamField path="Timestamp" type="time.Time">
+  When the message was created
+</ParamField>
+
+<ParamField path="Metadata" type="map[string]interface{}">
+  Custom metadata for the message
+</ParamField>
+
+<ParamField path="CreatedAt" type="time.Time">
+  Database creation timestamp
+</ParamField>
+
+## NoOpMemoryStore
+
+A no-op implementation that doesn't persist conversations. Useful for stateless agents.
+
+```go
+type NoOpMemoryStore struct{}
+```
+
+### Example
+
+```go
+// Agent with no memory
+agent, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithMemory(&memory.NoOpMemoryStore{}),
+)
+```
+
+## Built-in Implementations
+
+Flowbaker includes a MongoDB memory store:
+
+- **MongoDB** - `pkg/ai-sdk/memory/mongodb/`
+
+### MongoDB Example
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+
+// Create MongoDB memory store
+memStore, err := mongodb.New(mongodb.Config{
+    URI: "mongodb://localhost:27017",
+    Database: "flowbaker",
+    Collection: "conversations",
+})
+
+// Use with agent
+agent, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithMemory(memStore),
+    agent.WithConversationHistoryLimit(20),
+)
+```
+
+## Implementing Custom Memory Store
+
+To create a custom memory implementation:
+
+1. Implement the `Store` interface
+2. Handle conversation retrieval and storage
+3. Manage message ordering and pagination
+4. Handle concurrent access safely
+
+```go
+type CustomMemory struct {
+    db *sql.DB
+}
+
+func (m *CustomMemory) GetConversation(ctx context.Context, filter memory.Filter) (types.Conversation, error) {
+    // Query database with filter
+    query := `SELECT * FROM conversations WHERE session_id = ?`
+    if filter.Limit > 0 {
+        query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+    }
+    
+    // Execute and return
+    // ...
+}
+
+func (m *CustomMemory) SaveConversation(ctx context.Context, conv types.Conversation) error {
+    // Insert or update conversation
+    // Handle message ordering
+    // ...
+}
+```
+
+## Best Practices
+
+1. **Session Management**: Use consistent SessionID format across your application
+2. **Message Limits**: Set appropriate `ConversationHistoryLimit` to manage context window
+3. **Pagination**: Use `Before` cursor for efficient pagination of long conversations
+4. **Metadata**: Store conversation context in Metadata field for filtering/search
+5. **Error Handling**: Gracefully handle memory failures (agent continues with empty history)

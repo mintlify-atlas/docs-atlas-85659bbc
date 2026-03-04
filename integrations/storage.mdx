@@ -1,0 +1,598 @@
+---
+title: 'Storage & Database Integrations'
+description: 'Connect to databases, data warehouses, and cloud storage'
+---
+
+Flowbaker provides integrations for various data storage systems, from relational databases to cloud object storage.
+
+## PostgreSQL
+
+Relational database integration with full SQL support.
+
+### Credentials
+
+```yaml
+uri: "postgresql://username:password@localhost:5432/database"
+```
+
+**Connection String Format:**
+
+```
+postgresql://[user[:password]@][host][:port][/dbname][?param1=value1&...]
+```
+
+### Actions
+
+#### Execute Query
+
+```yaml
+action: execute_query
+properties:
+  query: |
+    SELECT id, name, email, created_at
+    FROM users
+    WHERE status = 'active'
+    ORDER BY created_at DESC
+    LIMIT 100
+```
+
+#### Parameterized Query
+
+```yaml
+action: execute_query
+properties:
+  query: |
+    INSERT INTO orders (user_id, product_id, quantity, price)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id
+  parameters:
+    - "{{user_id}}"
+    - "{{product_id}}"
+    - "{{quantity}}"
+    - "{{price}}"
+```
+
+#### Update Data
+
+```yaml
+action: execute_query
+properties:
+  query: |
+    UPDATE users
+    SET last_login = NOW()
+    WHERE email = $1
+  parameters:
+    - "{{email}}"
+```
+
+#### Transaction Example
+
+```yaml
+action: execute_query
+properties:
+  query: |
+    BEGIN;
+    INSERT INTO accounts (user_id, balance) VALUES ($1, $2);
+    INSERT INTO transactions (account_id, amount) VALUES (currval('accounts_id_seq'), $3);
+    COMMIT;
+```
+
+### Agent Memory Provider
+
+Use PostgreSQL to store AI agent conversation history:
+
+```yaml
+action: use_memory
+properties:
+  table_prefix: "ai_memory"
+  session_id: "user-{{user_id}}"
+```
+
+This automatically creates and manages:
+- `ai_memory_conversations` table
+- `ai_memory_messages` table
+
+### Example: Data Pipeline
+
+```yaml
+nodes:
+  - id: extract
+    type: http
+    action: get
+    properties:
+      url: "https://api.example.com/data"
+      
+  - id: transform
+    type: transform
+    input: "{{extract.body.records}}"
+    
+  - id: load
+    type: postgresql
+    action: execute_query
+    properties:
+      query: |
+        INSERT INTO raw_data (source, payload, imported_at)
+        VALUES ($1, $2, NOW())
+      parameters:
+        - "api.example.com"
+        - "{{transform.output | json}}"
+```
+
+## MongoDB
+
+Document database integration.
+
+### Credentials
+
+```yaml
+uri: "mongodb://username:password@localhost:27017/database"
+```
+
+**Connection String Format:**
+
+```
+mongodb://[username:password@]host1[:port1][,host2[:port2],...][/database][?options]
+```
+
+For MongoDB Atlas:
+
+```
+mongodb+srv://username:password@cluster.mongodb.net/database?retryWrites=true&w=majority
+```
+
+### Actions
+
+#### Find Documents
+
+```yaml
+action: find
+properties:
+  collection: "users"
+  filter:
+    status: "active"
+    created_at:
+      $gte: "2024-01-01"
+  limit: 100
+  sort:
+    created_at: -1
+```
+
+#### Insert Document
+
+```yaml
+action: insert_one
+properties:
+  collection: "orders"
+  document:
+    user_id: "{{user_id}}"
+    items: "{{cart_items}}"
+    total: "{{total_amount}}"
+    created_at: "{{now()}}"
+```
+
+#### Update Document
+
+```yaml
+action: update_one
+properties:
+  collection: "users"
+  filter:
+    email: "{{email}}"
+  update:
+    $set:
+      last_login: "{{now()}}"
+      login_count:
+        $inc: 1
+```
+
+#### Aggregation Pipeline
+
+```yaml
+action: aggregate
+properties:
+  collection: "orders"
+  pipeline:
+    - $match:
+        status: "completed"
+    - $group:
+        _id: "$user_id"
+        total_spent:
+          $sum: "$amount"
+        order_count:
+          $sum: 1
+    - $sort:
+        total_spent: -1
+    - $limit: 10
+```
+
+## Redis
+
+In-memory data structure store for caching and real-time operations.
+
+### Credentials
+
+```yaml
+host: "localhost"
+port: "6379"
+password: "your_password"  # Optional
+database: "0"  # 0-15
+username: "default"  # Optional, for Redis 6+
+tls: false
+tls_skip_verify: false  # For development only
+tls_server_name: ""  # Optional
+```
+
+### String Operations
+
+#### Get Value
+
+```yaml
+action: get
+properties:
+  key: "user:{{user_id}}:session"
+```
+
+#### Set Value
+
+```yaml
+action: set
+properties:
+  key: "cache:api_response"
+  value: "{{api_data | json}}"
+  expiration: 3600  # Seconds (1 hour)
+```
+
+#### Increment Counter
+
+```yaml
+action: incr
+properties:
+  key: "counter:page_views"
+```
+
+### Hash Operations
+
+#### Store Hash
+
+```yaml
+action: hset
+properties:
+  key: "user:123"
+  fields:
+    name: "John Doe"
+    email: "john@example.com"
+    last_login: "2024-03-04T10:00:00Z"
+```
+
+#### Get Hash Field
+
+```yaml
+action: hget
+properties:
+  key: "user:123"
+  field: "email"
+```
+
+#### Get All Hash Fields
+
+```yaml
+action: hgetall
+properties:
+  key: "user:123"
+```
+
+### List Operations
+
+#### Push to List
+
+```yaml
+action: lpush
+properties:
+  key: "queue:tasks"
+  values:
+    - "{{task_1}}"
+    - "{{task_2}}"
+```
+
+#### Pop from List
+
+```yaml
+action: rpop
+properties:
+  key: "queue:tasks"
+  count: 1
+```
+
+#### Get List Range
+
+```yaml
+action: lrange
+properties:
+  key: "recent_events"
+  start: 0
+  stop: 9  # Get first 10 items
+```
+
+### Set Operations
+
+#### Add to Set
+
+```yaml
+action: sadd
+properties:
+  key: "tags:article:123"
+  members:
+    - "golang"
+    - "tutorial"
+    - "beginner"
+```
+
+#### Get Set Members
+
+```yaml
+action: smembers
+properties:
+  key: "tags:article:123"
+```
+
+### Sorted Set Operations
+
+#### Add to Sorted Set
+
+```yaml
+action: zadd
+properties:
+  key: "leaderboard"
+  members:
+    - member: "player1"
+      score: 1000
+    - member: "player2"
+      score: 1500
+```
+
+#### Get Top Scores
+
+```yaml
+action: zrevrange
+properties:
+  key: "leaderboard"
+  start: 0
+  stop: 9  # Top 10
+```
+
+### Agent Memory Provider
+
+```yaml
+action: redis_agent_memory
+properties:
+  key_prefix: "agent:conversation:"
+  session_id: "{{user_id}}"
+  ttl: 86400  # 24 hours
+```
+
+### Example: Rate Limiting
+
+```yaml
+nodes:
+  - id: check_rate_limit
+    type: redis
+    action: incr
+    properties:
+      key: "ratelimit:{{ip_address}}:{{current_minute}}"
+      
+  - id: set_expiry
+    type: redis
+    action: expire
+    properties:
+      key: "ratelimit:{{ip_address}}:{{current_minute}}"
+      expiration: 60
+      
+  - id: check_limit
+    type: condition
+    condition: "{{check_rate_limit.result <= 100}}"
+```
+
+## Amazon S3
+
+Cloud object storage integration.
+
+### Credentials
+
+```yaml
+access_key_id: "AKIAIOSFODNN7EXAMPLE"
+secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+region: "us-east-1"
+```
+
+### Actions
+
+#### Upload Object
+
+```yaml
+action: upload_object
+properties:
+  bucket: "my-bucket"
+  key: "uploads/file.pdf"
+  content: "{{file_data}}"
+  content_type: "application/pdf"
+  metadata:
+    user_id: "{{user_id}}"
+    upload_date: "{{now()}}"
+```
+
+#### Download Object
+
+```yaml
+action: download_object
+properties:
+  bucket: "my-bucket"
+  key: "uploads/file.pdf"
+```
+
+#### List Objects
+
+```yaml
+action: list_objects
+properties:
+  bucket: "my-bucket"
+  prefix: "uploads/2024/"
+  max_keys: 1000
+  delimiter: "/"
+```
+
+#### Copy Object
+
+```yaml
+action: copy_object
+properties:
+  source_bucket: "source-bucket"
+  source_key: "original/file.pdf"
+  destination_bucket: "destination-bucket"
+  destination_key: "backup/file.pdf"
+```
+
+#### Delete Object
+
+```yaml
+action: delete_object
+properties:
+  bucket: "my-bucket"
+  key: "uploads/old-file.pdf"
+```
+
+#### Get Object Info
+
+```yaml
+action: get_object_info
+properties:
+  bucket: "my-bucket"
+  key: "uploads/file.pdf"
+```
+
+### Example: File Processing Pipeline
+
+```yaml
+nodes:
+  - id: webhook_upload
+    type: webhook
+    
+  - id: upload_to_s3
+    type: s3
+    action: upload_object
+    properties:
+      bucket: "raw-uploads"
+      key: "{{webhook_upload.filename}}"
+      content: "{{webhook_upload.file}}"
+      
+  - id: process_file
+    type: transform
+    input: "{{webhook_upload.file}}"
+    
+  - id: store_processed
+    type: s3
+    action: upload_object
+    properties:
+      bucket: "processed-files"
+      key: "processed/{{webhook_upload.filename}}"
+      content: "{{process_file.output}}"
+```
+
+## Snowflake
+
+Cloud data warehouse integration.
+
+### Credentials
+
+```yaml
+account: "your-account.snowflakecomputing.com"
+username: "your_username"
+password: "your_password"
+warehouse: "COMPUTE_WH"
+database: "MY_DATABASE"
+schema: "PUBLIC"
+```
+
+### Actions
+
+#### Execute Query
+
+```yaml
+action: execute_query
+properties:
+  query: |
+    SELECT
+      date_trunc('day', order_date) as day,
+      COUNT(*) as order_count,
+      SUM(amount) as total_revenue
+    FROM orders
+    WHERE order_date >= DATEADD(day, -30, CURRENT_DATE())
+    GROUP BY day
+    ORDER BY day DESC
+```
+
+## Dropbox
+
+File storage and sharing integration.
+
+### Credentials
+
+Use OAuth authentication:
+
+```yaml
+dropbox_oauth: "sl.B..."
+```
+
+### Actions
+
+- Upload files
+- Download files
+- List folder contents
+- Create folders
+- Share files
+
+## Google Drive
+
+Google Drive file management.
+
+### Credentials
+
+OAuth authentication for Google Drive access.
+
+### Actions
+
+- Upload files
+- Download files
+- List files and folders
+- Share permissions
+- Search files
+
+## Google Sheets
+
+Spreadsheet operations.
+
+### Actions
+
+- Read ranges
+- Write data
+- Append rows
+- Update cells
+- Create sheets
+
+## Best Practices
+
+1. **Connection Pooling**: Reuse database connections
+2. **Query Optimization**: Use indexes and optimize queries
+3. **Error Handling**: Implement retry logic for transient failures
+4. **Security**: Never hardcode credentials, use environment variables
+5. **Backups**: Regular backups for critical data
+6. **Monitoring**: Track query performance and errors
+7. **Transactions**: Use transactions for data consistency
+8. **Pagination**: Handle large result sets properly
+9. **TTL**: Set appropriate expiration times for cached data
+10. **Object Lifecycle**: Use S3 lifecycle policies for cost optimization
+
+## Next Steps
+
+- [Workflow Concepts](/concepts/workflows)
+- [Node Types](/concepts/nodes)
+- [Integration Overview](/integrations/overview)

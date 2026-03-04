@@ -1,0 +1,161 @@
+---
+title: Executor API
+description: Workflow execution types and state management
+---
+
+## NodeExecution
+
+Represents the execution state and metrics for a single node.
+
+### Type Definition
+
+<ParamField path="ID" type="string">
+  Unique identifier for this execution
+</ParamField>
+
+<ParamField path="NodeID" type="string">
+  ID of the node being executed
+</ParamField>
+
+<ParamField path="IntegrationType" type="IntegrationType">
+  The integration type being executed
+</ParamField>
+
+<ParamField path="IntegrationActionType" type="IntegrationActionType">
+  The specific action type being executed
+</ParamField>
+
+<ParamField path="StartedAt" type="time.Time">
+  Timestamp when execution started
+</ParamField>
+
+<ParamField path="EndedAt" type="time.Time">
+  Timestamp when execution completed
+</ParamField>
+
+<ParamField path="ExecutionOrder" type="int64">
+  Order in which this node was executed in the workflow
+</ParamField>
+
+<ParamField path="InputItemsCount" type="InputItemsCount">
+  Count of input items by input ID
+</ParamField>
+
+<ParamField path="InputItemsSizeInBytes" type="InputItemsSizeInBytes">
+  Size of input items in bytes by input ID
+</ParamField>
+
+<ParamField path="OutputItemsCount" type="OutputItemsCount">
+  Count of output items by output index
+</ParamField>
+
+<ParamField path="OutputItemsSizeInBytes" type="OutputItemsSizeInBytes">
+  Size of output items in bytes by output index
+</ParamField>
+
+## NodeExecutionEntry
+
+Represents a single entry in the execution history.
+
+<ParamField path="NodeID" type="string">
+  ID of the node that was executed
+</ParamField>
+
+<ParamField path="ItemsByInputID" type="map[string]NodeItems">
+  Input items organized by input ID
+</ParamField>
+
+<ParamField path="ItemsByOutputID" type="map[string]NodeItems">
+  Output items organized by output ID
+</ParamField>
+
+<ParamField path="EventType" type="EventType">
+  Type of event that occurred during execution
+</ParamField>
+
+<ParamField path="Error" type="string">
+  Error message if execution failed
+</ParamField>
+
+<ParamField path="Timestamp" type="int64">
+  Unix timestamp of the execution
+</ParamField>
+
+<ParamField path="ExecutionOrder" type="int">
+  Order of execution in the workflow
+</ParamField>
+
+## NodeItems
+
+Represents items flowing between nodes.
+
+<ParamField path="FromNodeID" type="string">
+  ID of the source node that produced these items
+</ParamField>
+
+<ParamField path="Items" type="[]Item">
+  Array of data items
+</ParamField>
+
+## Type Aliases
+
+The executor uses several type aliases for tracking execution metrics:
+
+### InputItemsCount
+
+```go
+type InputItemsCount map[string]int64
+```
+
+Maps input ID to the count of items received on that input.
+
+### InputItemsSizeInBytes
+
+```go
+type InputItemsSizeInBytes map[string]int64
+```
+
+Maps input ID to the total size in bytes of items received.
+
+### OutputItemsCount
+
+```go
+type OutputItemsCount map[int64]int64
+```
+
+Maps output index to the count of items produced on that output.
+
+### OutputItemsSizeInBytes
+
+```go
+type OutputItemsSizeInBytes map[int64]int64
+```
+
+Maps output index to the total size in bytes of items produced.
+
+## Usage Example
+
+The executor system tracks detailed metrics for each node execution:
+
+```go
+execution := NodeExecution{
+    ID: "exec-123",
+    NodeID: "node-456",
+    IntegrationType: IntegrationType_HTTP,
+    IntegrationActionType: "send_request",
+    StartedAt: time.Now(),
+    ExecutionOrder: 1,
+    InputItemsCount: InputItemsCount{
+        "input-1": 5,
+    },
+    OutputItemsCount: OutputItemsCount{
+        0: 5,
+    },
+}
+```
+
+These metrics are used for:
+- Performance monitoring
+- Cost tracking
+- Debugging workflow executions
+- Optimizing workflow performance

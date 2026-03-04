@@ -1,0 +1,348 @@
+---
+title: Agent
+description: Core agent for managing AI conversations and tool execution
+---
+
+The `Agent` is the central component that manages conversation flow, executes reasoning loops, and coordinates tool calls.
+
+## Agent Type
+
+From `pkg/ai-sdk/agent/agent.go:17-42`:
+
+```go
+type Agent struct {
+    MaxIterations       int
+    Tools               []tool.Tool
+    UserInputTools      map[string]tool.UserInputTool
+    SystemPrompt        string
+    Model               provider.LanguageModel
+    Memory              memory.Store
+    ConversationHistory int
+    
+    TotalUsage   types.Usage
+    FinishReason string
+}
+```
+
+### Fields
+
+- **MaxIterations**: Maximum reasoning steps before stopping (default: 10)
+- **Tools**: Tools available to the agent
+- **UserInputTools**: Tools that require human intervention
+- **SystemPrompt**: System instructions for the agent
+- **Model**: The LLM provider (OpenAI, Anthropic, Gemini)
+- **Memory**: Storage for conversation history
+- **ConversationHistory**: Number of messages to retrieve from memory
+- **TotalUsage**: Accumulated token usage across all steps
+- **FinishReason**: Why the agent stopped (stop, length, tool_calls, etc.)
+
+## Creating an Agent
+
+From `pkg/ai-sdk/agent/agent.go:59-90`:
+
+```go
+func New(opts ...Option) (*Agent, error)
+```
+
+Create a new agent with options:
+
+```go
+ag, err := agent.New(
+    agent.WithModel(model),
+    agent.WithSystemPrompt("You are a helpful assistant."),
+    agent.WithMaxIterations(10),
+    agent.WithTools(tool1, tool2),
+    agent.WithMemory(memoryStore),
+    agent.WithConversationHistoryLimit(50),
+)
+```
+
+## Options
+
+From `pkg/ai-sdk/agent/options.go`:
+
+### WithModel
+```go
+func WithModel(m provider.LanguageModel) Option
+```
+Sets the language model provider. **Required**.
+
+### WithSystemPrompt
+```go
+func WithSystemPrompt(prompt string) Option
+```
+Sets the system prompt that guides agent behavior.
+
+### WithMaxIterations
+```go
+func WithMaxIterations(iterations int) Option
+```
+Sets maximum reasoning steps (default: 10).
+
+### WithTools
+```go
+func WithTools(tools ...tool.Tool) Option
+```
+Adds tools the agent can use.
+
+### WithMemory
+```go
+func WithMemory(m memory.Store) Option
+```
+Sets the memory store for conversation persistence.
+
+### WithConversationHistoryLimit
+```go
+func WithConversationHistoryLimit(count int) Option
+```
+Limits messages retrieved from memory (0 = all).
+
+### WithCancelContext
+```go
+func WithCancelContext(ctx context.Context) Option
+```
+Provides a context for cancellation.
+
+### WithHooks
+```go
+func WithHooks(hooks Hooks) Option
+```
+Sets lifecycle hooks for monitoring.
+
+## Chat Methods
+
+### ChatSync (Synchronous)
+
+From `pkg/ai-sdk/agent/agent.go:196-223`:
+
+```go
+func (a *Agent) ChatSync(ctx context.Context, req ChatRequest) (ChatSyncResult, error)
+```
+
+Blocking method that returns after completion:
+
+```go
+result, err := ag.ChatSync(ctx, agent.ChatRequest{
+    Prompt:    "What is 2+2?",
+    SessionID: "user-123",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(result.Steps[len(result.Steps)-1].Content)
+fmt.Printf("Total tokens: %d\n", result.TotalUsage.TotalTokens)
+```
+
+**Returns**:
+```go
+type ChatSyncResult struct {
+    Steps        []*Step
+    TotalUsage   types.Usage
+    FinishReason string
+}
+```
+
+### Chat (Streaming)
+
+From `pkg/ai-sdk/agent/agent.go:114-188`:
+
+```go
+func (a *Agent) Chat(ctx context.Context, req ChatRequest) (ChatStream, error)
+```
+
+Non-blocking method that streams events:
+
+```go
+stream, err := ag.Chat(ctx, agent.ChatRequest{
+    Prompt:    "Tell me a story",
+    SessionID: "user-123",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+for event := range stream.EventChan {
+    switch e := event.(type) {
+    case *types.TextDeltaEvent:
+        fmt.Print(e.Delta)
+    case *types.ToolCallStartEvent:
+        fmt.Printf("\nCalling: %s\n", e.Name)
+    case *types.UsageEvent:
+        fmt.Printf("Tokens: %d\n", e.Usage.TotalTokens)
+    }
+}
+
+if err := stream.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+## ChatRequest
+
+From `pkg/ai-sdk/agent/agent.go:92-96`:
+
+```go
+type ChatRequest struct {
+    Prompt      string
+    SessionID   string
+    ToolResults []types.ToolResult // For resuming after user input
+}
+```
+
+- **Prompt**: User message to send
+- **SessionID**: Identifier for conversation continuity
+- **ToolResults**: Results from user input tools (for resuming interrupted conversations)
+
+## Step Type
+
+From `pkg/ai-sdk/agent/agent.go:259-269`:
+
+```go
+type Step struct {
+    StepNumber   int
+    Content      string
+    ToolCalls    []types.ToolCall
+    ToolResults  []types.ToolResult
+    Usage        types.Usage
+    FinishReason string
+    Warnings     []types.Warning
+    
+    GenerateRequest provider.GenerateRequest
+}
+```
+
+Each step represents one reasoning iteration:
+
+```go
+for _, step := range result.Steps {
+    fmt.Printf("Step %d: %s\n", step.StepNumber, step.Content)
+    fmt.Printf("Tools called: %d\n", len(step.ToolCalls))
+    fmt.Printf("Tokens used: %d\n", step.Usage.TotalTokens)
+}
+```
+
+## Hooks
+
+From `pkg/ai-sdk/agent/agent.go:44-57`:
+
+```go
+type Hooks struct {
+    OnBeforeGenerate   func(ctx context.Context, req *provider.GenerateRequest, step *Step)
+    OnGenerationFailed func(ctx context.Context, req *provider.GenerateRequest, step *Step, err error)
+    
+    OnStepStart    func(ctx context.Context, step *Step)
+    OnStepComplete func(ctx context.Context, step *Step)
+    
+    OnBeforeMemoryRetrieve  func(ctx context.Context, filter memory.Filter)
+    OnMemoryRetrieved       func(ctx context.Context, filter memory.Filter, conversation types.Conversation)
+    OnMemoryRetrievalFailed func(ctx context.Context, filter memory.Filter, err error)
+    OnBeforeMemorySave      func(ctx context.Context, conversation types.Conversation)
+    OnMemorySaved           func(ctx context.Context, conversation types.Conversation)
+    OnMemorySaveFailed      func(ctx context.Context, conversation types.Conversation, err error)
+}
+```
+
+Hooks for monitoring agent lifecycle:
+
+```go
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithHooks(agent.Hooks{
+        OnStepStart: func(ctx context.Context, step *agent.Step) {
+            log.Printf("Starting step %d", step.StepNumber)
+        },
+        OnStepComplete: func(ctx context.Context, step *agent.Step) {
+            log.Printf("Completed step %d: %d tokens", 
+                step.StepNumber, step.Usage.TotalTokens)
+        },
+        OnMemorySaved: func(ctx context.Context, conv types.Conversation) {
+            log.Printf("Saved conversation: %s", conv.ID)
+        },
+    }),
+)
+```
+
+## Stream Events
+
+When using `Chat()`, the agent emits these events:
+
+- **StreamStartEvent**: Stream begins
+- **AgentStepStartEvent**: New reasoning step begins
+- **TextDeltaEvent**: Incremental text content
+- **TextCompleteEvent**: Complete text content
+- **ToolCallStartEvent**: Tool call begins
+- **ToolCallDeltaEvent**: Tool arguments streaming
+- **ToolCallCompleteEvent**: Tool call complete
+- **ToolExecutionStartEvent**: Tool execution begins
+- **ToolExecutionCompleteEvent**: Tool execution complete
+- **UsageEvent**: Token usage update
+- **FinishReasonEvent**: Finish reason
+- **AgentStepCompleteEvent**: Step complete
+- **StreamEndEvent**: Stream ends
+- **StreamErrorEvent**: Error occurred
+
+## Reasoning Loop
+
+The agent executes a reasoning loop:
+
+1. **Retrieve memory**: Load conversation history from memory store
+2. **Add user message**: Append new user prompt to conversation
+3. **Generate response**: Call LLM with messages and tools
+4. **Process tool calls**: Execute any tools the LLM requested
+5. **Add tool results**: Append results to conversation
+6. **Repeat**: Continue until no more tool calls or max iterations
+
+From `pkg/ai-sdk/agent/agent.go:123-178`, the loop continues while:
+- Current step < MaxIterations
+- Agent hasn't finished (has tool calls or specific finish reasons)
+
+## Finish Reasons
+
+From `pkg/ai-sdk/types/response.go:24-31`:
+
+- **stop**: Natural completion
+- **length**: Max tokens reached
+- **tool_calls**: Waiting for tool results
+- **content_filter**: Content filtered by provider
+- **error**: Error occurred
+- **human_intervention**: User input required
+
+## Human Intervention
+
+Agents can pause for user input using `UserInputTool`:
+
+```go
+// Tool that requires user input
+type ApprovalTool struct{}
+
+func (t *ApprovalTool) SendInputEvent(ctx context.Context, toolCall types.ToolCall) error {
+    // Send event to UI requesting approval
+    return nil
+}
+
+// Agent will pause and set FinishReason to "human_intervention"
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithTools(approvalTool),
+)
+
+// Resume with tool results
+stream, _ := ag.Chat(ctx, agent.ChatRequest{
+    SessionID: "user-123",
+    ToolResults: []types.ToolResult{{
+        ToolCallID: "call_123",
+        Content:    "approved",
+    }},
+})
+```
+
+## Best Practices
+
+1. **Set appropriate MaxIterations** to prevent infinite loops
+2. **Use hooks** for logging and monitoring
+3. **Handle errors** from both agent creation and chat methods
+4. **Stream for UX** - use `Chat()` for responsive interfaces
+5. **Sync for simplicity** - use `ChatSync()` for scripts and batch processing
+6. **Memory management** - limit conversation history to relevant messages
+7. **Tool design** - keep tools focused and well-documented

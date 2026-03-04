@@ -1,0 +1,114 @@
+---
+title: CLI Overview
+description: Complete reference for the Flowbaker CLI commands and global flags
+---
+
+The Flowbaker CLI provides commands to manage and operate your self-hosted workflow automation executor.
+
+## Global Flags
+
+These flags can be used with any command:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--debug` | boolean | Enable debug logging for troubleshooting |
+| `--api-url` | string | Override the default API URL |
+
+### Usage Examples
+
+```bash
+# Enable debug logging
+flowbaker status --debug
+
+# Use a custom API URL
+flowbaker start --api-url https://custom-api.flowbaker.com
+
+# Combine multiple flags
+flowbaker start --debug --api-url https://custom-api.flowbaker.com
+```
+
+## Available Commands
+
+### Core Commands
+
+<CardGroup cols={2}>
+  <Card title="start" icon="play" href="/cli/start">
+    Start the executor service (auto-setup on first run)
+  </Card>
+  
+  <Card title="status" icon="circle-info" href="/cli/status">
+    Show current executor status and configuration
+  </Card>
+  
+  <Card title="reset" icon="rotate-left" href="/cli/reset">
+    Reset configuration and start fresh
+  </Card>
+  
+  <Card title="workspaces" icon="folder" href="/cli/workspaces">
+    Manage workspace assignments
+  </Card>
+</CardGroup>
+
+## Command Structure
+
+All Flowbaker commands follow this structure:
+
+```bash
+flowbaker [command] [subcommand] [flags]
+```
+
+### Examples
+
+```bash
+# Basic command
+flowbaker start
+
+# Command with global flag
+flowbaker status --debug
+
+# Command with subcommand
+flowbaker workspaces list
+
+# Full example with all options
+flowbaker start --debug --api-url https://api.flowbaker.com
+```
+
+## Getting Help
+
+Get help for any command using the `--help` flag:
+
+```bash
+# General help
+flowbaker --help
+
+# Command-specific help
+flowbaker start --help
+flowbaker workspaces --help
+```
+
+## Quick Start
+
+For first-time setup:
+
+```bash
+# 1. Start the executor (triggers setup wizard)
+flowbaker start
+
+# 2. Check status
+flowbaker status
+
+# 3. View assigned workspaces
+flowbaker workspaces list
+```
+
+## Configuration
+
+The CLI stores configuration data locally. The configuration includes:
+
+- Executor ID
+- API base URL
+- Workspace assignments
+- Authentication keys
+- Last connection timestamp
+
+Configuration is managed automatically by the CLI. Use `flowbaker reset` to clear all configuration data.

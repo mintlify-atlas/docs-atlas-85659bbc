@@ -1,0 +1,480 @@
+---
+title: Memory Storage Example
+description: Implement persistent conversation memory with MongoDB
+---
+
+This example demonstrates how to add persistent memory to agents using MongoDB.
+
+## Basic Memory Setup
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Connect to MongoDB
+    mongoURI := os.Getenv("MONGODB_URI")
+    if mongoURI == "" {
+        mongoURI = "mongodb://localhost:27017"
+    }
+
+    client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+    if err != nil {
+        log.Fatalf("Failed to connect to MongoDB: %v", err)
+    }
+    defer client.Disconnect(ctx)
+
+    // Create memory store
+    database := client.Database("flowbaker")
+    memoryStore := mongodb.New(database)
+
+    // Create agent with memory
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant that remembers conversations."),
+        agent.WithMemory(memoryStore),
+        agent.WithConversationHistoryLimit(50), // Load last 50 messages
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // First conversation
+    sessionID := "user-12345"
+    fmt.Println("First message:")
+    result1, err := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "My name is Alice and I love programming.",
+        SessionID: sessionID,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(result1.Steps[len(result1.Steps)-1].Content)
+
+    // Second conversation - agent remembers
+    fmt.Println("\nSecond message:")
+    result2, err := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What's my name and what do I love?",
+        SessionID: sessionID,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(result2.Steps[len(result2.Steps)-1].Content)
+}
+```
+
+## Multi-Session Memory
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+func createAgent(memoryStore memory.Store) (*agent.Agent, error) {
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    return agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+        agent.WithMemory(memoryStore),
+        agent.WithConversationHistoryLimit(50),
+    )
+}
+
+func main() {
+    ctx := context.Background()
+
+    // Setup MongoDB
+    client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer client.Disconnect(ctx)
+
+    memoryStore := mongodb.New(client.Database("flowbaker"))
+    ag, _ := createAgent(memoryStore)
+
+    // User 1 session
+    fmt.Println("=== User 1 ===")
+    ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "I'm planning a trip to Paris.",
+        SessionID: "user-1",
+    })
+
+    // User 2 session (different conversation)
+    fmt.Println("\n=== User 2 ===")
+    ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "I'm learning Go programming.",
+        SessionID: "user-2",
+    })
+
+    // Back to user 1 - remembers Paris
+    fmt.Println("\n=== User 1 again ===")
+    result, _ := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What was I telling you about?",
+        SessionID: "user-1",
+    })
+    fmt.Println(result.Steps[len(result.Steps)-1].Content)
+    // Output: "You were telling me about your trip to Paris."
+
+    // User 2 - remembers Go
+    fmt.Println("\n=== User 2 again ===")
+    result, _ = ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What was I learning?",
+        SessionID: "user-2",
+    })
+    fmt.Println(result.Steps[len(result.Steps)-1].Content)
+    // Output: "You were learning Go programming."
+}
+```
+
+## Memory with User ID
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/types"
+    "github.com/google/uuid"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Setup MongoDB
+    client, _ := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+    defer client.Disconnect(ctx)
+
+    memoryStore := mongodb.New(client.Database("flowbaker"))
+
+    // Save conversation with user ID
+    conversation := types.Conversation{
+        ID:        uuid.New().String(),
+        SessionID: "session-123",
+        UserID:    "user-456",
+        Messages: []types.Message{
+            {
+                Role:    types.RoleUser,
+                Content: "Hello!",
+            },
+            {
+                Role:    types.RoleAssistant,
+                Content: "Hi! How can I help you?",
+            },
+        },
+        Status: types.StatusActive,
+        Metadata: map[string]any{
+            "source":  "web",
+            "version": "1.0",
+        },
+    }
+
+    err := memoryStore.SaveConversation(ctx, conversation)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Retrieve by session ID
+    retrieved, err := memoryStore.GetConversation(ctx, memory.Filter{
+        SessionID: "session-123",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Printf("Retrieved conversation: %d messages\n", len(retrieved.Messages))
+    fmt.Printf("User ID: %s\n", retrieved.UserID)
+    fmt.Printf("Status: %s\n", retrieved.Status)
+    fmt.Printf("Metadata: %v\n", retrieved.Metadata)
+}
+```
+
+## Memory Hooks Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/types"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Setup MongoDB
+    client, _ := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+    defer client.Disconnect(ctx)
+
+    memoryStore := mongodb.New(client.Database("flowbaker"))
+
+    // Create agent with memory hooks
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithMemory(memoryStore),
+        agent.WithHooks(agent.Hooks{
+            OnBeforeMemoryRetrieve: func(ctx context.Context, filter memory.Filter) {
+                fmt.Printf("[Memory] Retrieving conversation for session: %s\n", filter.SessionID)
+            },
+            OnMemoryRetrieved: func(ctx context.Context, filter memory.Filter, conv types.Conversation) {
+                fmt.Printf("[Memory] Retrieved %d messages\n", len(conv.Messages))
+            },
+            OnMemoryRetrievalFailed: func(ctx context.Context, filter memory.Filter, err error) {
+                fmt.Printf("[Memory] Retrieval failed: %v\n", err)
+            },
+            OnBeforeMemorySave: func(ctx context.Context, conv types.Conversation) {
+                fmt.Printf("[Memory] Saving conversation: %s\n", conv.ID)
+            },
+            OnMemorySaved: func(ctx context.Context, conv types.Conversation) {
+                fmt.Printf("[Memory] Saved successfully. Total messages: %d\n", len(conv.Messages))
+            },
+            OnMemorySaveFailed: func(ctx context.Context, conv types.Conversation, err error) {
+                fmt.Printf("[Memory] Save failed: %v\n", err)
+            },
+        }),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    result, _ := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "Tell me a joke.",
+        SessionID: "test-session",
+    })
+
+    fmt.Println("\nResponse:", result.Steps[len(result.Steps)-1].Content)
+}
+```
+
+## Custom Memory Implementation
+
+Implement your own memory backend:
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "time"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/types"
+    "github.com/go-redis/redis/v8"
+    "github.com/google/uuid"
+)
+
+// RedisMemoryStore implements memory.Store using Redis
+type RedisMemoryStore struct {
+    client *redis.Client
+    ttl    time.Duration
+}
+
+func NewRedisMemoryStore(addr string, ttl time.Duration) *RedisMemoryStore {
+    client := redis.NewClient(&redis.Options{
+        Addr: addr,
+    })
+
+    return &RedisMemoryStore{
+        client: client,
+        ttl:    ttl,
+    }
+}
+
+func (s *RedisMemoryStore) GetConversation(
+    ctx context.Context,
+    filter memory.Filter,
+) (types.Conversation, error) {
+    key := fmt.Sprintf("conversation:%s", filter.SessionID)
+
+    data, err := s.client.Get(ctx, key).Bytes()
+    if err == redis.Nil {
+        // Create new conversation if not found
+        return types.Conversation{
+            ID:        uuid.New().String(),
+            SessionID: filter.SessionID,
+            UserID:    filter.UserID,
+            Messages:  []types.Message{},
+            Status:    types.StatusActive,
+            CreatedAt: time.Now(),
+            UpdatedAt: time.Now(),
+            Metadata:  map[string]any{},
+        }, nil
+    }
+    if err != nil {
+        return types.Conversation{}, fmt.Errorf("redis get failed: %w", err)
+    }
+
+    var conv types.Conversation
+    if err := json.Unmarshal(data, &conv); err != nil {
+        return types.Conversation{}, fmt.Errorf("unmarshal failed: %w", err)
+    }
+
+    // Apply limit if specified
+    if filter.Limit > 0 && len(conv.Messages) > filter.Limit {
+        conv.Messages = conv.Messages[len(conv.Messages)-filter.Limit:]
+    }
+
+    return conv, nil
+}
+
+func (s *RedisMemoryStore) SaveConversation(
+    ctx context.Context,
+    conversation types.Conversation,
+) error {
+    key := fmt.Sprintf("conversation:%s", conversation.SessionID)
+
+    conversation.UpdatedAt = time.Now()
+
+    data, err := json.Marshal(conversation)
+    if err != nil {
+        return fmt.Errorf("marshal failed: %w", err)
+    }
+
+    if err := s.client.Set(ctx, key, data, s.ttl).Err(); err != nil {
+        return fmt.Errorf("redis set failed: %w", err)
+    }
+
+    return nil
+}
+
+func main() {
+    // Use Redis memory store
+    redisStore := NewRedisMemoryStore("localhost:6379", 24*time.Hour)
+
+    // Create agent with Redis memory
+    ag, _ := agent.New(
+        agent.WithModel(model),
+        agent.WithMemory(redisStore),
+    )
+
+    // Conversations are now stored in Redis with 24-hour TTL
+}
+```
+
+## Conversation History Limit
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Setup
+    client, _ := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+    defer client.Disconnect(ctx)
+    memoryStore := mongodb.New(client.Database("flowbaker"))
+
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    // Agent with conversation history limit
+    ag, _ := agent.New(
+        agent.WithModel(model),
+        agent.WithMemory(memoryStore),
+        agent.WithConversationHistoryLimit(10), // Only load last 10 messages
+    )
+
+    sessionID := "long-conversation"
+
+    // Have a long conversation
+    for i := 1; i <= 20; i++ {
+        ag.ChatSync(ctx, agent.ChatRequest{
+            Prompt:    fmt.Sprintf("Message number %d", i),
+            SessionID: sessionID,
+        })
+    }
+
+    // This will only see the last 10 messages
+    result, _ := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What was my first message?",
+        SessionID: sessionID,
+    })
+
+    fmt.Println(result.Steps[len(result.Steps)-1].Content)
+    // The agent won't remember message #1, only messages 11-20
+}
+```
+
+## Best Practices
+
+1. **Use consistent SessionIDs** for conversation continuity
+2. **Set conversation history limits** to manage context windows and costs
+3. **Index your MongoDB** properly for query performance
+4. **Use memory hooks** for logging and debugging
+5. **Handle conversation status** appropriately
+6. **Store useful metadata** for analytics
+7. **Consider TTL** for temporary conversations
+8. **Clean up old conversations** periodically
+
+## Next Steps
+
+- Learn about [Memory Interface](/ai-sdk/memory)
+- Explore [Agent Configuration](/ai-sdk/agent)
+- See [Tool Examples](/ai-sdk/examples/custom-tools)

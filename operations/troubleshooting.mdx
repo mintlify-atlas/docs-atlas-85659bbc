@@ -1,0 +1,683 @@
+---
+title: Troubleshooting
+description: Debug and resolve common issues with Flowbaker executor
+---
+
+## Common Issues
+
+### Executor Won't Start
+
+**Symptom:** Executor exits immediately or fails to start
+
+**Possible Causes:**
+
+1. **Missing Configuration**
+
+```bash
+# Check if setup is complete
+flowbaker status
+
+# If not configured, run setup
+flowbaker start
+# Follow the interactive setup prompts
+```
+
+2. **Port Already in Use**
+
+```bash
+# Check if port 8081 is already bound
+lsof -i :8081
+
+# Or using netstat
+netstat -tuln | grep 8081
+
+# Kill the process or use a different port
+# (Note: port configuration may require code changes)
+```
+
+3. **Configuration File Issues**
+
+```bash
+# Check configuration file location
+ls -la ~/.flowbaker/config.json
+
+# Validate JSON format
+cat ~/.flowbaker/config.json | jq .
+
+# Reset configuration if corrupted
+flowbaker reset
+```
+
+4. **Permission Issues**
+
+```bash
+# Ensure config directory has correct permissions
+chmod 700 ~/.flowbaker
+chmod 600 ~/.flowbaker/config.json
+
+# Check if running as correct user
+whoami
+id
+```
+
+### Health Check Failing
+
+**Symptom:** `/health` endpoint returns errors or times out
+
+**Diagnosis:**
+
+```bash
+# Test health endpoint locally
+curl -v http://localhost:8081/health
+
+# Check if service is running
+ps aux | grep flowbaker
+
+# Check logs for errors
+docker logs flowbaker-executor
+# Or for binary installation:
+journalctl -u flowbaker-executor -f
+```
+
+**Common Fixes:**
+
+1. **Service Not Running:** Start the executor with `flowbaker start`
+2. **Firewall Blocking:** Check firewall rules allow port 8081
+3. **Wrong Interface:** Ensure service binds to `0.0.0.0:8081` not `127.0.0.1:8081`
+4. **Container Network Issues:** Use `docker network inspect` to verify connectivity
+
+### Workspace Registration Failed
+
+**Symptom:** Cannot add workspace to executor
+
+**Error Messages:**
+
+```
+ERR Failed to register workspace error="invalid passcode"
+ERR No API key found for workspace
+```
+
+**Solutions:**
+
+1. **Verify Passcode**
+
+```bash
+# Check passcode configuration
+grep -i passcode ~/.flowbaker/config.json
+
+# Ensure environment variable matches
+echo $FLOWBAKER_STATIC_PASSCODE
+
+# Update if needed
+export FLOWBAKER_STATIC_PASSCODE="correct-passcode"
+```
+
+2. **Check Registration Endpoint**
+
+```bash
+# Test registration endpoint is accessible
+curl -X POST http://localhost:8081/workspaces/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workspace_id": "ws_test",
+    "workspace_name": "Test",
+    "api_public_key": "base64_key",
+    "passcode": "your-passcode"
+  }'
+```
+
+3. **Verify Workspace Registration Enabled**
+
+```bash
+# Check if registration is enabled
+cat ~/.flowbaker/config.json | jq '.enable_workspace_registration'
+
+# Enable if disabled
+export FLOWBAKER_ENABLE_WORKSPACE_REGISTRATION=true
+```
+
+### API Signature Verification Failed
+
+**Symptom:** Workflows fail to execute with authentication errors
+
+**Error Messages:**
+
+```
+ERR API signature verification failed error="timestamp outside allowed window"
+ERR API signature verification failed error="signature verification failed"
+ERR API signature verification failed error="invalid signature format"
+```
+
+**Troubleshooting Steps:**
+
+1. **Time Synchronization Issues** (most common)
+
+Signatures have a 5-minute validity window. Clock drift causes failures:
+
+```bash
+# Check system time
+date
+timedatectl
+
+# Sync with NTP server
+sudo ntpdate -s time.nist.gov
+
+# Or configure NTP permanently
+sudo systemctl enable systemd-timesyncd
+sudo systemctl start systemd-timesyncd
+
+# For Docker containers
+docker run -d --name flowbaker-executor \
+  -v /etc/localtime:/etc/localtime:ro \
+  flowbaker/executor:latest
+```
+
+2. **Wrong Public Key**
+
+```bash
+# Verify workspace assignments in config
+cat ~/.flowbaker/config.json | jq '.workspace_assignments'
+
+# Ensure the public key matches what's configured in Flowbaker platform
+# May need to re-register workspace
+```
+
+3. **Request Body Modification**
+
+If using a reverse proxy or API gateway, ensure it doesn't modify request bodies:
+
+```nginx
+# Nginx example - preserve request body
+location /workspaces/ {
+    proxy_pass http://localhost:8081;
+    proxy_set_header X-API-Signature $http_x_api_signature;
+    proxy_set_header X-API-Timestamp $http_x_api_timestamp;
+    proxy_set_header Content-Type $http_content_type;
+    # Don't buffer or modify request body
+    proxy_request_buffering off;
+}
+```
+
+4. **Enable Debug Logging**
+
+```bash
+# Run with debug to see signature verification details
+flowbaker start --debug
+```
+
+Look for these debug messages:
+```
+DBG API signature verified successfully path=/workspaces/ws_123/executions method=POST
+```
+
+### Credential Decryption Failed
+
+**Symptom:** Workflows fail with credential errors
+
+**Error Messages:**
+
+```
+ERR Failed to decrypt credential error="credential expired"
+ERR Failed to decrypt credential error="failed to decrypt"
+ERR Failed to get encrypted credential
+```
+
+**Solutions:**
+
+1. **Credential Expired**
+
+Credentials have TTL (time-to-live). Request new credential from platform:
+
+```bash
+# Check logs for expiration timestamp
+grep -i "credential expired" /var/log/flowbaker/executor.log
+
+# Re-run workflow to fetch fresh credential
+```
+
+2. **Encryption Key Mismatch**
+
+Executor's X25519 private key must match the public key registered on platform:
+
+```bash
+# Verify X25519 keys in config
+cat ~/.flowbaker/config.json | jq '{x25519_private_key, x25519_public_key}'
+
+# If keys don't match platform registration, you may need to:
+# 1. Unregister workspace
+# 2. Reset executor: flowbaker reset
+# 3. Re-register with new keys
+```
+
+3. **Network Issues Fetching Credential**
+
+```bash
+# Test API connectivity
+curl -v https://api.flowbaker.io/health
+
+# Check proxy settings if behind corporate proxy
+export HTTPS_PROXY=http://proxy.company.com:8080
+```
+
+### Connection Test Failed
+
+**Symptom:** Cannot test connections to external services
+
+**Troubleshooting:**
+
+1. **Network Connectivity**
+
+```bash
+# Test DNS resolution
+nslookup api.stripe.com
+
+# Test HTTPS connectivity
+curl -v https://api.stripe.com/v1/
+
+# Check firewall rules
+sudo iptables -L -n | grep OUTPUT
+```
+
+2. **Invalid Credentials**
+
+```bash
+# Check credential format matches integration requirements
+# Enable debug logging to see credential validation
+flowbaker start --debug
+```
+
+3. **SSL/TLS Issues**
+
+```bash
+# Update CA certificates
+sudo apt-get update && sudo apt-get install -y ca-certificates
+
+# For Alpine (Docker)
+apk --no-cache add ca-certificates
+```
+
+## Debug Logging
+
+Enable detailed debug output to troubleshoot issues:
+
+### Command Line Flag
+
+```bash
+# Start with debug logging
+flowbaker start --debug
+```
+
+### Environment Variable
+
+```bash
+# Set debug mode via environment
+export FLOWBAKER_DEBUG=true
+flowbaker start
+```
+
+### Docker Debug Mode
+
+```bash
+# Run container with debug logging
+docker run -d \
+  --name flowbaker-executor \
+  -p 8081:8081 \
+  -e FLOWBAKER_DEBUG=true \
+  -e FLOWBAKER_EXECUTOR_ID=your_id \
+  -e FLOWBAKER_ED25519_PRIVATE_KEY=your_key \
+  flowbaker/executor:latest start --debug
+```
+
+### What Debug Logging Shows
+
+**API Signature Verification:**
+```
+DBG API signature verified successfully 
+  path=/workspaces/ws_123/executions 
+  method=POST 
+  workspace_id=ws_123
+```
+
+**Configuration Loading:**
+```
+DBG Config file not found, using environment variables and defaults
+DBG Using config file: /home/user/.flowbaker/config.json
+```
+
+**Credential Operations:**
+```
+DBG Getting encrypted credential 
+  workspace_id=ws_123 
+  credential_id=cred_456
+DBG Credential decrypted successfully
+```
+
+## Connection Troubleshooting
+
+### Cannot Reach Flowbaker API
+
+**Symptom:** Executor cannot communicate with Flowbaker platform
+
+**Diagnosis:**
+
+```bash
+# Test API connectivity
+curl -v https://api.flowbaker.io/health
+
+# Check DNS resolution
+dig api.flowbaker.io
+nslookup api.flowbaker.io
+
+# Test from within Docker container
+docker exec flowbaker-executor wget -O- https://api.flowbaker.io/health
+```
+
+**Common Fixes:**
+
+1. **Corporate Proxy**
+
+```bash
+# Configure proxy environment variables
+export HTTP_PROXY=http://proxy.company.com:8080
+export HTTPS_PROXY=http://proxy.company.com:8080
+export NO_PROXY=localhost,127.0.0.1
+
+# For Docker
+docker run -d \
+  -e HTTP_PROXY=http://proxy.company.com:8080 \
+  -e HTTPS_PROXY=http://proxy.company.com:8080 \
+  flowbaker/executor:latest
+```
+
+2. **Firewall Rules**
+
+```bash
+# Allow outbound HTTPS
+sudo iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
+
+# For AWS Security Groups
+aws ec2 authorize-security-group-egress \
+  --group-id sg-xxxxx \
+  --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges='[{CidrIp=0.0.0.0/0}]'
+```
+
+3. **DNS Issues**
+
+```bash
+# Use Google DNS
+echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+
+# For Docker
+docker run -d \
+  --dns 8.8.8.8 \
+  flowbaker/executor:latest
+```
+
+### Webhook/Callback Issues
+
+**Symptom:** Flowbaker platform cannot reach executor
+
+**Requirements:**
+- Executor must be publicly accessible or use tunnel
+- Correct address configured during setup
+
+**Verification:**
+
+```bash
+# Test external accessibility
+curl https://your-executor-domain.com/health
+
+# Check configured address
+cat ~/.flowbaker/config.json | jq '.address'
+```
+
+**Solutions:**
+
+1. **Use ngrok for Development**
+
+```bash
+# Start ngrok tunnel
+ngrok http 8081
+
+# Copy the HTTPS URL and update executor config
+# Example: https://abc123.ngrok.io
+```
+
+2. **Configure Reverse Proxy**
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name executor.yourdomain.com;
+    
+    ssl_certificate /etc/ssl/certs/executor.crt;
+    ssl_certificate_key /etc/ssl/private/executor.key;
+    
+    location / {
+        proxy_pass http://localhost:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+3. **Update Executor Address**
+
+```bash
+# Edit config file
+nano ~/.flowbaker/config.json
+# Update "address" field to public URL
+
+# Or use environment variable
+export FLOWBAKER_EXECUTOR_ADDRESS=https://executor.yourdomain.com
+```
+
+## Performance Issues
+
+### Slow Workflow Execution
+
+**Diagnosis:**
+
+```bash
+# Check CPU and memory usage
+top
+htop
+
+# Docker stats
+docker stats flowbaker-executor
+
+# Check disk I/O
+iostat -x 1
+```
+
+**Solutions:**
+
+1. **Increase Resources**
+
+```yaml
+# Docker Compose
+services:
+  executor:
+    image: flowbaker/executor:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+```
+
+2. **Check Network Latency**
+
+```bash
+# Measure latency to API
+ping -c 10 api.flowbaker.io
+
+# HTTP latency
+curl -w "@curl-format.txt" -o /dev/null -s https://api.flowbaker.io/health
+
+# curl-format.txt:
+# time_namelookup: %{time_namelookup}\n
+# time_connect: %{time_connect}\n
+# time_starttransfer: %{time_starttransfer}\n
+# time_total: %{time_total}\n
+```
+
+### Memory Leaks
+
+**Symptom:** Memory usage grows over time
+
+```bash
+# Monitor memory over time
+watch -n 5 'docker stats --no-stream flowbaker-executor'
+
+# Check Go memory stats (requires pprof endpoint - not in current version)
+# Future versions may include /debug/pprof/heap
+```
+
+## Configuration Issues
+
+### Environment Variables Not Working
+
+**Check Loading Order:**
+
+1. Environment variables override config file
+2. Config file: `~/.flowbaker/config.json`
+3. Defaults from code
+
+**Verify Environment Variables:**
+
+```bash
+# List all Flowbaker env vars
+env | grep FLOWBAKER
+
+# Check specific variable
+echo $FLOWBAKER_EXECUTOR_ID
+echo $FLOWBAKER_API_URL
+```
+
+**Naming Convention:**
+
+- Config file uses `snake_case`: `executor_id`
+- Environment uses `SCREAMING_SNAKE_CASE` with prefix: `FLOWBAKER_EXECUTOR_ID`
+- Nested values use underscores: `api_base_url` → `FLOWBAKER_API_BASE_URL`
+
+### Override API URL
+
+For testing against staging or local API:
+
+```bash
+# Command line flag
+flowbaker start --api-url https://staging-api.flowbaker.io
+
+# Environment variable
+export FLOWBAKER_API_URL=https://staging-api.flowbaker.io
+flowbaker start
+
+# Config file
+{
+  "api_base_url": "https://staging-api.flowbaker.io",
+  ...
+}
+```
+
+## Getting Help
+
+### Collect Diagnostic Information
+
+```bash
+# System info
+uname -a
+lsb_release -a  # Linux
+
+# Executor version
+flowbaker --version  # If supported
+curl http://localhost:8081/health | jq '.version'
+
+# Configuration (remove sensitive keys!)
+cat ~/.flowbaker/config.json | jq 'del(.ed25519_private_key, .x25519_private_key)'
+
+# Recent logs
+tail -n 100 /var/log/flowbaker/executor.log
+# Or for Docker:
+docker logs --tail 100 flowbaker-executor
+```
+
+### Enable Verbose Logging
+
+```bash
+# Maximum verbosity
+flowbaker start --debug 2>&1 | tee flowbaker-debug.log
+```
+
+### Check GitHub Issues
+
+Search for similar issues:
+- [Flowbaker GitHub Issues](https://github.com/flowbaker/flowbaker/issues)
+
+### Contact Support
+
+When reporting issues, include:
+
+1. **Error message** (exact text)
+2. **Steps to reproduce**
+3. **Environment** (OS, Docker version, etc.)
+4. **Configuration** (sanitized)
+5. **Logs** (with --debug enabled)
+6. **Version information**
+
+<Warning>
+**Remove sensitive data** before sharing logs or configuration. This includes private keys, passcodes, and API keys.
+</Warning>
+
+## Quick Reference
+
+### Useful Commands
+
+```bash
+# Check executor status
+flowbaker status
+
+# Start with debug logging
+flowbaker start --debug
+
+# Reset configuration
+flowbaker reset
+
+# List configured workspaces
+flowbaker workspaces list
+
+# Test health endpoint
+curl http://localhost:8081/health
+
+# View logs (Docker)
+docker logs -f flowbaker-executor
+
+# Check configuration
+cat ~/.flowbaker/config.json | jq .
+```
+
+### Log Locations
+
+- **Binary:** Logs to stderr (redirect to file if needed)
+- **Docker:** `docker logs flowbaker-executor`
+- **Systemd:** `journalctl -u flowbaker-executor -f`
+- **Kubernetes:** `kubectl logs deployment/flowbaker-executor -f`
+
+### Common Files
+
+- **Config:** `~/.flowbaker/config.json`
+- **Docker Image:** `flowbaker/executor:latest`
+- **Default Port:** `8081`
+- **Health Endpoint:** `http://localhost:8081/health`
+
+## Related Resources
+
+- [Monitoring](/operations/monitoring) - Set up monitoring and alerting
+- [Security](/operations/security) - Understand authentication and encryption
+- [Configuration](/deployment/configuration) - Configure executor settings
+- [Docker Deployment](/deployment/docker) - Deploy in production

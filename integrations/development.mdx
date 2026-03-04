@@ -1,0 +1,499 @@
+---
+title: 'Development Integrations'
+description: 'Integrate with development tools, version control, and APIs'
+---
+
+Flowbaker provides integrations for common development workflows, from managing GitHub repositories to making HTTP requests to any API.
+
+## GitHub
+
+Comprehensive GitHub integration for managing issues, pull requests, files, and releases.
+
+### Credentials
+
+Use OAuth authentication:
+
+```yaml
+github_oauth: "ghp_..."
+```
+
+Connect via OAuth in the Flowbaker UI for automatic token management.
+
+### Issue Actions
+
+#### Create Issue
+
+```yaml
+action: create_issue
+properties:
+  repository_id: "owner/repo"
+  title: "Bug: Login form validation"
+  body: "The login form doesn't validate email addresses properly."
+  assignee: "username"
+  labels:
+    - "bug"
+    - "high-priority"
+```
+
+#### Get Issue
+
+```yaml
+action: get_issue
+properties:
+  repository_id: "owner/repo"
+  issue_number: 123
+```
+
+#### Edit Issue
+
+```yaml
+action: edit_issue
+properties:
+  repository_id: "owner/repo"
+  issue_number: 123
+  state: "closed"
+  body: "Fixed in PR #124"
+```
+
+#### Create Issue Comment
+
+```yaml
+action: create_issue_comment
+properties:
+  repository_id: "owner/repo"
+  issue_number: 123
+  body: "Working on this issue now."
+```
+
+#### List Repository Issues
+
+```yaml
+action: get_repository_issues
+properties:
+  repository_id: "owner/repo"
+  state: "open"
+  labels:
+    - "bug"
+  assignee: "username"
+  sort: "created"
+  direction: "desc"
+  limit: 50
+  page: 1
+```
+
+### File Actions
+
+#### Create File
+
+```yaml
+action: create_file
+properties:
+  repository_id: "owner/repo"
+  path: "docs/new-feature.md"
+  message: "Add documentation for new feature"
+  content: "# New Feature\n\nThis feature allows..."
+  branch: "main"
+```
+
+#### Update File
+
+```yaml
+action: edit_file
+properties:
+  repository_id: "owner/repo"
+  path: "README.md"
+  message: "Update README with new instructions"
+  content: "# Updated README\n\n..."
+  sha: "abc123..."  # SHA of current file
+  branch: "main"
+```
+
+#### Get File Content
+
+```yaml
+action: get_file
+properties:
+  repository_id: "owner/repo"
+  path: "src/config.json"
+  ref: "main"  # Optional: branch, tag, or commit
+```
+
+#### Delete File
+
+```yaml
+action: delete_file
+properties:
+  repository_id: "owner/repo"
+  path: "old-file.txt"
+  message: "Remove deprecated file"
+  sha: "abc123..."
+  branch: "main"
+```
+
+#### List Repository Content
+
+```yaml
+action: list_files
+properties:
+  repository_id: "owner/repo"
+  path: "src/components"
+  ref: "main"
+```
+
+### Pull Request Actions
+
+#### List Pull Requests
+
+```yaml
+action: get_repository_prs
+properties:
+  repository_id: "owner/repo"
+  state: "open"
+  base: "main"
+  sort: "created"
+  direction: "desc"
+  limit: 30
+```
+
+#### Create Pull Request Review
+
+```yaml
+action: create_review
+properties:
+  repository_id: "owner/repo"
+  pull_number: 42
+  event: "APPROVE"  # or "REQUEST_CHANGES", "COMMENT"
+  body: "Looks good! LGTM 🚀"
+```
+
+### Release Actions
+
+#### Create Release
+
+```yaml
+action: create_release
+properties:
+  repository_id: "owner/repo"
+  tag_name: "v1.2.0"
+  name: "Version 1.2.0"
+  body: "## Changes\n\n- New feature X\n- Bug fix Y"
+  draft: false
+  prerelease: false
+```
+
+#### List Releases
+
+```yaml
+action: list_releases
+properties:
+  repository_id: "owner/repo"
+  limit: 10
+```
+
+### Triggers
+
+GitHub supports webhook triggers for various events:
+
+```yaml
+trigger: github_universal_trigger
+events:
+  - push
+  - pull_request
+  - issues
+  - release
+```
+
+### Example: Automated Issue Triage
+
+```yaml
+nodes:
+  - id: github_webhook
+    type: github
+    trigger: github_universal_trigger
+    events:
+      - issues
+      
+  - id: classify_issue
+    type: ai_agent
+    action: execute_agent
+    config:
+      prompt: |
+        Analyze this GitHub issue and determine:
+        1. Priority (low/medium/high)
+        2. Category (bug/feature/documentation)
+        3. Suggested labels
+        
+        Title: {{github_webhook.issue.title}}
+        Body: {{github_webhook.issue.body}}
+      
+  - id: update_issue
+    type: github
+    action: edit_issue
+    properties:
+      repository_id: "{{github_webhook.repository.full_name}}"
+      issue_number: "{{github_webhook.issue.number}}"
+      labels: "{{classify_issue.suggested_labels}}"
+      
+  - id: comment
+    type: github
+    action: create_issue_comment
+    properties:
+      repository_id: "{{github_webhook.repository.full_name}}"
+      issue_number: "{{github_webhook.issue.number}}"
+      body: "Automatically triaged as {{classify_issue.category}} with {{classify_issue.priority}} priority."
+```
+
+## GitLab
+
+Similar to GitHub integration with GitLab-specific features.
+
+### Credentials
+
+```yaml
+gitlab_oauth: "glpat-..."
+```
+
+### Actions
+
+Supports similar actions to GitHub:
+- Issue management
+- Merge request operations
+- File operations
+- Pipeline triggers
+
+## HTTP
+
+Make HTTP requests to any API endpoint with flexible authentication.
+
+### Credentials
+
+Multiple authentication methods:
+
+#### Basic Authentication
+
+```yaml
+generic_auth_type: "basic_auth"
+username: "your_username"
+password: "your_password"
+```
+
+#### Bearer Token
+
+```yaml
+generic_auth_type: "bearer_auth"
+bearer_token: "your_token_here"
+```
+
+#### Custom Header
+
+```yaml
+generic_auth_type: "header_auth"
+header_auth_key: "X-API-Key"
+header_auth_value: "your_api_key"
+```
+
+#### Query Parameter
+
+```yaml
+generic_auth_type: "query_auth"
+query_auth_key: "api_key"
+query_auth_value: "your_api_key"
+```
+
+#### JSON Body Authentication
+
+```yaml
+generic_auth_type: "body_auth"
+body_auth:
+  client_id: "your_client_id"
+  client_secret: "your_client_secret"
+```
+
+### Actions
+
+#### GET Request
+
+```yaml
+action: get
+properties:
+  url: "https://api.example.com/users"
+  query_params:
+    - key: "page"
+      value: "1"
+    - key: "limit"
+      value: "50"
+  headers:
+    - key: "Accept"
+      value: "application/json"
+```
+
+#### POST Request
+
+```yaml
+action: post
+properties:
+  url: "https://api.example.com/users"
+  body_type: "json"
+  json_body:
+    name: "John Doe"
+    email: "john@example.com"
+  headers:
+    - key: "Content-Type"
+      value: "application/json"
+```
+
+#### PUT Request
+
+```yaml
+action: put
+properties:
+  url: "https://api.example.com/users/123"
+  body_type: "json"
+  json_body:
+    name: "John Smith"
+```
+
+#### PATCH Request
+
+```yaml
+action: patch
+properties:
+  url: "https://api.example.com/users/123"
+  body_type: "json"
+  json_body:
+    email: "newemail@example.com"
+```
+
+#### DELETE Request
+
+```yaml
+action: delete
+properties:
+  url: "https://api.example.com/users/123"
+  body_type: "json"
+  json_body: {}
+```
+
+#### Form Data
+
+```yaml
+action: post
+properties:
+  url: "https://api.example.com/upload"
+  body_type: "multipart_form_data"
+  multipart_form_data_body:
+    - key: "file"
+      value: "{{file_data}}"
+    - key: "description"
+      value: "Profile picture"
+```
+
+### Example: REST API Integration
+
+```yaml
+nodes:
+  - id: fetch_users
+    type: http
+    action: get
+    properties:
+      url: "https://api.example.com/users"
+      query_params:
+        - key: "status"
+          value: "active"
+          
+  - id: process_users
+    type: transform
+    input: "{{fetch_users.body}}"
+    
+  - id: create_report
+    type: http
+    action: post
+    properties:
+      url: "https://reporting.example.com/reports"
+      body_type: "json"
+      json_body:
+        title: "Active Users Report"
+        data: "{{process_users.output}}"
+```
+
+## Webhook
+
+Receive webhook events from external services.
+
+### Configuration
+
+Webhooks are automatically available at:
+
+```
+https://your-flowbaker-instance.com/webhooks/{workflow_id}
+```
+
+### Trigger
+
+```yaml
+trigger: webhook
+config:
+  method: "POST"  # GET, POST, PUT, PATCH, DELETE
+  authentication: "none"  # or "basic", "bearer", "header"
+```
+
+### Access Webhook Data
+
+```yaml
+body: "{{trigger.body}}"
+headers: "{{trigger.headers}}"
+query_params: "{{trigger.query}}"
+```
+
+## Jira
+
+Project management and issue tracking.
+
+### Credentials
+
+```yaml
+site_url: "https://your-domain.atlassian.net"
+email: "your-email@company.com"
+api_token: "your_api_token"
+```
+
+### Actions
+
+- Create issues
+- Update issues
+- Add comments
+- Search issues
+- Manage transitions
+
+## Linear
+
+Modern project management integration.
+
+### Credentials
+
+```yaml
+api_key: "lin_api_..."
+```
+
+### Actions
+
+- Create issues
+- Update issues
+- Manage projects
+- Track status
+
+## Best Practices
+
+1. **API Rate Limits**: Implement exponential backoff for retries
+2. **Error Handling**: Check status codes and handle errors gracefully
+3. **Authentication**: Use environment variables for sensitive credentials
+4. **Pagination**: Handle paginated responses properly
+5. **Timeouts**: Set appropriate timeout values
+6. **Logging**: Log API calls for debugging
+7. **Idempotency**: Use idempotency keys where supported
+
+## Next Steps
+
+- [Workflow Concepts](/concepts/workflows)
+- [Node Types](/concepts/nodes)
+- [Integration Overview](/integrations/overview)

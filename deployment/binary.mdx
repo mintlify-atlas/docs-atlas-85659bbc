@@ -1,0 +1,475 @@
+---
+title: 'Binary Deployment'
+description: 'Deploy Flowbaker executor as a native binary with systemd'
+---
+
+## Overview
+
+Deploy Flowbaker as a native binary for optimal performance and direct system integration. This method is ideal for production environments that require fine-grained control.
+
+## Prerequisites
+
+- Go 1.25.0 or higher (for building from source)
+- Linux, macOS, or Windows
+- systemd (for Linux service management)
+
+## Installation
+
+### Download Pre-built Binary
+
+```bash
+# Download latest release
+wget https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-linux-amd64
+
+# Make executable
+chmod +x flowbaker-linux-amd64
+
+# Move to system path
+sudo mv flowbaker-linux-amd64 /usr/local/bin/flowbaker
+
+# Verify installation
+flowbaker --version
+```
+
+### Build from Source
+
+```bash
+# Clone repository
+git clone https://github.com/flowbaker/flowbaker.git
+cd flowbaker
+
+# Build binary
+go build -o flowbaker ./cmd
+
+# Install to system
+sudo mv flowbaker /usr/local/bin/
+```
+
+### Build with Version Information
+
+```bash
+#!/bin/bash
+
+VERSION=$(git describe --tags --always --dirty)
+GIT_COMMIT=$(git rev-parse HEAD)
+BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+BUILD_USER=$(whoami)
+
+CGO_ENABLED=0 go build -a -installsuffix cgo \
+  -ldflags "-X github.com/flowbaker/flowbaker/internal/version.Version=${VERSION} \
+            -X github.com/flowbaker/flowbaker/internal/version.GitCommit=${GIT_COMMIT} \
+            -X github.com/flowbaker/flowbaker/internal/version.BuildDate=${BUILD_DATE} \
+            -X github.com/flowbaker/flowbaker/internal/version.BuildUser=${BUILD_USER}" \
+  -o flowbaker ./cmd
+```
+
+## First-Time Setup
+
+### Interactive Setup
+
+```bash
+# Start executor with interactive setup
+flowbaker start
+```
+
+The setup wizard will guide you through:
+
+1. **Executor Name**: A friendly name for your executor
+2. **Executor Address**: The URL where your executor is accessible
+3. **API URL**: Flowbaker API endpoint (default: `https://api.flowbaker.io`)
+4. **Workspace Registration**: Connect to your Flowbaker workspace
+5. **Authentication Keys**: Automatic generation of X25519 and Ed25519 key pairs
+
+### Configuration Location
+
+Configuration is stored at:
+- **Linux/macOS**: `~/.flowbaker/config.json`
+- **Windows**: `%USERPROFILE%\.flowbaker\config.json`
+
+## systemd Service
+
+### Service File
+
+Create `/etc/systemd/system/flowbaker.service`:
+
+```ini
+[Unit]
+Description=Flowbaker Workflow Executor
+Documentation=https://github.com/flowbaker/flowbaker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flowbaker
+Group=flowbaker
+Restart=on-failure
+RestartSec=5s
+
+# Environment configuration
+Environment="FLOWBAKER_API_URL=https://api.flowbaker.io"
+Environment="FLOWBAKER_EXECUTOR_ADDRESS=http://localhost:8081"
+
+# Load additional environment variables from file
+EnvironmentFile=-/etc/flowbaker/executor.env
+
+# Working directory
+WorkingDirectory=/opt/flowbaker
+
+# Execute binary
+ExecStart=/usr/local/bin/flowbaker start
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/flowbaker/.flowbaker
+
+# Process management
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=flowbaker
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Create Dedicated User
+
+```bash
+# Create flowbaker user and group
+sudo useradd -r -s /bin/false -m -d /home/flowbaker flowbaker
+
+# Create working directory
+sudo mkdir -p /opt/flowbaker
+sudo chown flowbaker:flowbaker /opt/flowbaker
+
+# Create config directory
+sudo mkdir -p /home/flowbaker/.flowbaker
+sudo chown -R flowbaker:flowbaker /home/flowbaker/.flowbaker
+sudo chmod 700 /home/flowbaker/.flowbaker
+```
+
+### Environment File
+
+Create `/etc/flowbaker/executor.env`:
+
+```bash
+# Flowbaker Executor Configuration
+FLOWBAKER_API_URL=https://api.flowbaker.io
+FLOWBAKER_EXECUTOR_NAME=production-executor
+FLOWBAKER_EXECUTOR_ADDRESS=https://executor.example.com
+FLOWBAKER_ENABLE_WORKSPACE_REGISTRATION=true
+
+# Optional: Static API signature verification
+# STATIC_API_SIGNATURE_PUBLIC_KEY=your_public_key_here
+```
+
+```bash
+# Set proper permissions
+sudo mkdir -p /etc/flowbaker
+sudo chown root:flowbaker /etc/flowbaker
+sudo chmod 750 /etc/flowbaker
+sudo chown root:flowbaker /etc/flowbaker/executor.env
+sudo chmod 640 /etc/flowbaker/executor.env
+```
+
+### Service Management
+
+```bash
+# Reload systemd daemon
+sudo systemctl daemon-reload
+
+# Enable service to start on boot
+sudo systemctl enable flowbaker
+
+# Start service
+sudo systemctl start flowbaker
+
+# Check status
+sudo systemctl status flowbaker
+
+# View logs
+sudo journalctl -u flowbaker -f
+
+# Stop service
+sudo systemctl stop flowbaker
+
+# Restart service
+sudo systemctl restart flowbaker
+```
+
+## Commands
+
+### Available Commands
+
+```bash
+# Start executor (auto-setup on first run)
+flowbaker start
+
+# Check executor status
+flowbaker status
+
+# Reset configuration
+flowbaker reset
+
+# Manage workspaces
+flowbaker workspaces
+flowbaker workspaces list
+```
+
+### Status Output
+
+```bash
+$ flowbaker status
+
+Executor Status:
+  ID:           exec_abc123xyz
+  Name:         production-executor
+  Address:      https://executor.example.com
+  API URL:      https://api.flowbaker.io
+  Setup:        Complete
+  Last Connected: 2026-03-04T10:00:00Z
+
+Workspace Assignments:
+  - workspace_123: My Workspace
+  - workspace_456: Production Workspace
+```
+
+## Update and Maintenance
+
+### Update Binary
+
+```bash
+# Stop service
+sudo systemctl stop flowbaker
+
+# Backup configuration
+sudo cp -r /home/flowbaker/.flowbaker /home/flowbaker/.flowbaker.backup
+
+# Download new version
+wget https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-linux-amd64
+chmod +x flowbaker-linux-amd64
+
+# Replace binary
+sudo mv flowbaker-linux-amd64 /usr/local/bin/flowbaker
+
+# Start service
+sudo systemctl start flowbaker
+
+# Verify version
+flowbaker --version
+```
+
+### Automated Update Script
+
+```bash
+#!/bin/bash
+# /usr/local/bin/update-flowbaker.sh
+
+set -e
+
+LATEST_VERSION=$(curl -s https://api.github.com/repos/flowbaker/flowbaker/releases/latest | grep tag_name | cut -d '"' -f 4)
+CURRENT_VERSION=$(flowbaker --version 2>&1 | awk '{print $3}')
+
+if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
+    echo "Updating Flowbaker from $CURRENT_VERSION to $LATEST_VERSION"
+    
+    systemctl stop flowbaker
+    
+    wget -O /tmp/flowbaker https://github.com/flowbaker/flowbaker/releases/download/${LATEST_VERSION}/flowbaker-linux-amd64
+    chmod +x /tmp/flowbaker
+    mv /tmp/flowbaker /usr/local/bin/flowbaker
+    
+    systemctl start flowbaker
+    
+    echo "Update complete"
+else
+    echo "Already running latest version: $CURRENT_VERSION"
+fi
+```
+
+### Backup and Restore
+
+```bash
+# Backup configuration
+tar czf flowbaker-config-$(date +%Y%m%d).tar.gz -C /home/flowbaker .flowbaker
+
+# Restore configuration
+tar xzf flowbaker-config-20260304.tar.gz -C /home/flowbaker
+sudo chown -R flowbaker:flowbaker /home/flowbaker/.flowbaker
+sudo chmod 700 /home/flowbaker/.flowbaker
+```
+
+## Monitoring
+
+### Health Check
+
+```bash
+# Check if executor is healthy
+curl http://localhost:8081/health
+
+# Expected response:
+# {"status":"healthy","service":"flowbaker-executor","version":"1.0.0","timestamp":"2026-03-04T10:00:00Z"}
+```
+
+### Monitoring Script
+
+```bash
+#!/bin/bash
+# /usr/local/bin/check-flowbaker.sh
+
+HEALTH_URL="http://localhost:8081/health"
+RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL)
+
+if [ "$RESPONSE" != "200" ]; then
+    echo "Flowbaker health check failed (HTTP $RESPONSE)"
+    systemctl restart flowbaker
+    # Send alert (e.g., email, Slack, PagerDuty)
+fi
+```
+
+### Systemd Watchdog
+
+Add to service file for automatic restart on crashes:
+
+```ini
+[Service]
+WatchdogSec=60s
+Restart=always
+RestartSec=5s
+StartLimitIntervalSec=300s
+StartLimitBurst=5
+```
+
+## Logs
+
+### View Logs with journalctl
+
+```bash
+# Follow logs
+sudo journalctl -u flowbaker -f
+
+# View logs since boot
+sudo journalctl -u flowbaker -b
+
+# View logs for specific time range
+sudo journalctl -u flowbaker --since "2026-03-04 09:00:00" --until "2026-03-04 10:00:00"
+
+# Export logs to file
+sudo journalctl -u flowbaker > flowbaker.log
+```
+
+### Log Rotation
+
+Configure journald log rotation in `/etc/systemd/journald.conf`:
+
+```ini
+[Journal]
+SystemMaxUse=500M
+SystemMaxFileSize=100M
+MaxRetentionSec=7day
+```
+
+## Troubleshooting
+
+### Service Won't Start
+
+```bash
+# Check service status
+sudo systemctl status flowbaker
+
+# View detailed logs
+sudo journalctl -u flowbaker -n 100 --no-pager
+
+# Check binary exists and is executable
+ls -la /usr/local/bin/flowbaker
+
+# Test binary directly
+sudo -u flowbaker /usr/local/bin/flowbaker start
+```
+
+### Permission Issues
+
+```bash
+# Fix config directory permissions
+sudo chown -R flowbaker:flowbaker /home/flowbaker/.flowbaker
+sudo chmod 700 /home/flowbaker/.flowbaker
+
+# Fix config file permissions
+sudo chmod 600 /home/flowbaker/.flowbaker/config.json
+```
+
+### Port Already in Use
+
+```bash
+# Check what's using port 8081
+sudo lsof -i :8081
+
+# Change port by setting environment variable
+FLOWBAKER_EXECUTOR_ADDRESS=http://localhost:8082 flowbaker start
+```
+
+### Reset Configuration
+
+```bash
+# Reset and start fresh
+flowbaker reset
+flowbaker start
+```
+
+## Security Best Practices
+
+1. **Run as dedicated user**: Never run as root
+2. **Secure configuration**: Set proper file permissions (600-700)
+3. **Firewall rules**: Only expose port 8081 to necessary networks
+4. **TLS/HTTPS**: Use reverse proxy (nginx/Caddy) for HTTPS
+5. **Regular updates**: Keep binary up to date with latest security patches
+6. **Monitor logs**: Set up log aggregation and alerting
+7. **Backup configuration**: Regularly backup `~/.flowbaker/config.json`
+
+## Reverse Proxy Setup
+
+### Nginx
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name executor.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/executor.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/executor.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
+
+### Caddy
+
+```caddyfile
+executor.example.com {
+    reverse_proxy localhost:8081
+}
+```
+
+## Next Steps
+
+- [Configure environment variables](/deployment/environment-variables)
+- [Set up Docker deployment](/deployment/docker)
+- [Configure executor settings](/deployment/configuration)

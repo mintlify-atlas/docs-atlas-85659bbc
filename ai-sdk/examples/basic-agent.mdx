@@ -1,0 +1,365 @@
+---
+title: Basic Agent Example
+description: Complete example of building a basic AI agent
+---
+
+This example demonstrates creating a basic AI agent with the Flowbaker AI SDK.
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/types"
+)
+
+func main() {
+    // Get API key from environment
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    if apiKey == "" {
+        log.Fatal("OPENAI_API_KEY environment variable not set")
+    }
+
+    // Create OpenAI provider
+    model := openai.New(apiKey, "gpt-4o")
+
+    // Configure model settings
+    model.SetRequestSettings(openai.RequestSettings{
+        Model:       "gpt-4o",
+        Temperature: 0.7,
+        MaxTokens:   2000,
+    })
+
+    // Create agent
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful AI assistant."),
+        agent.WithMaxIterations(10),
+    )
+    if err != nil {
+        log.Fatalf("Failed to create agent: %v", err)
+    }
+
+    // Create context
+    ctx := context.Background()
+
+    // Chat with the agent (synchronous)
+    fmt.Println("Asking: What is the capital of France?")
+    result, err := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What is the capital of France?",
+        SessionID: "example-session",
+    })
+    if err != nil {
+        log.Fatalf("Chat failed: %v", err)
+    }
+
+    // Print the final response
+    if len(result.Steps) > 0 {
+        lastStep := result.Steps[len(result.Steps)-1]
+        fmt.Printf("\nResponse: %s\n", lastStep.Content)
+    }
+
+    // Print usage information
+    fmt.Printf("\nTotal tokens used: %d\n", result.TotalUsage.TotalTokens)
+    fmt.Printf("Prompt tokens: %d\n", result.TotalUsage.PromptTokens)
+    fmt.Printf("Completion tokens: %d\n", result.TotalUsage.CompletionTokens)
+    fmt.Printf("Finish reason: %s\n", result.FinishReason)
+}
+```
+
+## Output
+
+```
+Asking: What is the capital of France?
+
+Response: The capital of France is Paris.
+
+Total tokens used: 28
+Prompt tokens: 18
+Completion tokens: 10
+Finish reason: stop
+```
+
+## Streaming Example
+
+For real-time streaming responses:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/types"
+)
+
+func main() {
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    ctx := context.Background()
+
+    // Start streaming chat
+    fmt.Println("Asking: Tell me a short story about a robot.\n")
+    stream, err := ag.Chat(ctx, agent.ChatRequest{
+        Prompt:    "Tell me a short story about a robot.",
+        SessionID: "example-session",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Process streaming events
+    for event := range stream.EventChan {
+        switch e := event.(type) {
+        case *types.StreamStartEvent:
+            fmt.Printf("[Stream started - Model: %s]\n\n", e.ModelID)
+
+        case *types.TextDeltaEvent:
+            // Print text as it streams in
+            fmt.Print(e.Delta)
+
+        case *types.UsageEvent:
+            // Track token usage
+            fmt.Printf("\n\n[Tokens: %d]\n", e.Usage.TotalTokens)
+
+        case *types.StreamEndEvent:
+            fmt.Printf("\n[Stream ended - Reason: %s]\n", e.Reason)
+
+        case *types.StreamErrorEvent:
+            fmt.Printf("\n[Error: %s]\n", e.Message)
+        }
+    }
+
+    // Check for errors after stream completes
+    if err := stream.Err(); err != nil {
+        log.Fatalf("Stream error: %v", err)
+    }
+}
+```
+
+## With Lifecycle Hooks
+
+Monitor agent execution with hooks:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+)
+
+func main() {
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    // Create agent with hooks
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+        agent.WithHooks(agent.Hooks{
+            OnStepStart: func(ctx context.Context, step *agent.Step) {
+                fmt.Printf("[Step %d started]\n", step.StepNumber)
+            },
+            OnStepComplete: func(ctx context.Context, step *agent.Step) {
+                fmt.Printf("[Step %d complete - Tokens: %d]\n",
+                    step.StepNumber,
+                    step.Usage.TotalTokens,
+                )
+            },
+            OnBeforeGenerate: func(ctx context.Context, req *provider.GenerateRequest, step *agent.Step) {
+                fmt.Printf("[Generating with %d messages]\n", len(req.Messages))
+            },
+        }),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    ctx := context.Background()
+
+    result, err := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What is Go programming language?",
+        SessionID: "example-session",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    if len(result.Steps) > 0 {
+        fmt.Printf("\nFinal response: %s\n", result.Steps[len(result.Steps)-1].Content)
+    }
+}
+```
+
+## Multi-Provider Example
+
+Switch between providers easily:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/anthropic"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/gemini"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+)
+
+func createAgent(providerType string) (*agent.Agent, error) {
+    var model provider.LanguageModel
+
+    switch providerType {
+    case "openai":
+        model = openai.New(os.Getenv("OPENAI_API_KEY"), "gpt-4o")
+
+    case "anthropic":
+        model = anthropic.New(os.Getenv("ANTHROPIC_API_KEY"), "claude-sonnet-4-20250514")
+
+    case "gemini":
+        var err error
+        model, err = gemini.New(context.Background(), os.Getenv("GEMINI_API_KEY"), "gemini-2.5-pro")
+        if err != nil {
+            return nil, err
+        }
+
+    default:
+        return nil, fmt.Errorf("unknown provider: %s", providerType)
+    }
+
+    return agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+    )
+}
+
+func main() {
+    providers := []string{"openai", "anthropic", "gemini"}
+
+    for _, p := range providers {
+        fmt.Printf("\n=== Testing %s ==="\n", p)
+
+        ag, err := createAgent(p)
+        if err != nil {
+            log.Printf("Failed to create %s agent: %v", p, err)
+            continue
+        }
+
+        result, err := ag.ChatSync(context.Background(), agent.ChatRequest{
+            Prompt:    "Say hello in a creative way!",
+            SessionID: "multi-provider-test",
+        })
+        if err != nil {
+            log.Printf("%s failed: %v", p, err)
+            continue
+        }
+
+        if len(result.Steps) > 0 {
+            fmt.Printf("Response: %s\n", result.Steps[len(result.Steps)-1].Content)
+            fmt.Printf("Tokens: %d\n", result.TotalUsage.TotalTokens)
+        }
+    }
+}
+```
+
+## Error Handling
+
+Properly handle errors:
+
+```go
+package main
+
+import (
+    "context"
+    "errors"
+    "fmt"
+    "log"
+    "os"
+    "time"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+)
+
+func main() {
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    if apiKey == "" {
+        log.Fatal("OPENAI_API_KEY not set")
+    }
+
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+    )
+    if err != nil {
+        log.Fatalf("Agent creation failed: %v", err)
+    }
+
+    // Create context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    result, err := ag.ChatSync(ctx, agent.ChatRequest{
+        Prompt:    "What is the meaning of life?",
+        SessionID: "error-handling-example",
+    })
+
+    if err != nil {
+        // Check error type
+        if errors.Is(err, context.DeadlineExceeded) {
+            log.Fatal("Request timed out")
+        }
+        if errors.Is(err, context.Canceled) {
+            log.Fatal("Request was canceled")
+        }
+        log.Fatalf("Chat failed: %v", err)
+    }
+
+    // Check if we got any steps
+    if len(result.Steps) == 0 {
+        log.Fatal("No response from agent")
+    }
+
+    fmt.Printf("Response: %s\n", result.Steps[len(result.Steps)-1].Content)
+}
+```
+
+## Next Steps
+
+- Learn to add [Custom Tools](/ai-sdk/examples/custom-tools)
+- Implement [Memory Storage](/ai-sdk/examples/memory-storage)
+- Explore the [Agent API](/ai-sdk/agent)

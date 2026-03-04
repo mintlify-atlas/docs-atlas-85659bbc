@@ -1,0 +1,605 @@
+---
+title: Nodes
+description: Understanding workflow nodes, their types, configuration, and execution in Flowbaker
+---
+
+## Overview
+
+Nodes are the building blocks of Flowbaker workflows. Each node represents a discrete operation, whether it's triggering on an event or performing an action.
+
+## Node Types
+
+Flowbaker has two fundamental node types:
+
+```go
+type NodeType string
+
+const (
+    NodeTypeTrigger NodeType = "trigger"
+    NodeTypeAction  NodeType = "action"
+)
+```
+
+Location: `pkg/domain/workflow.go:93`
+
+### Trigger Nodes
+
+Trigger nodes initiate workflow execution when specific events occur:
+
+- **Webhook**: HTTP request received
+- **Cron**: Scheduled time reached
+- **Polling**: Data change detected
+- **On Error**: Error occurred in another workflow
+- **Chat**: User message received
+- **Click**: Button clicked
+
+<Tip>
+Every workflow must have at least one trigger node to initiate execution.
+</Tip>
+
+### Action Nodes
+
+Action nodes perform operations and transformations:
+
+- **HTTP Requests**: Call external APIs
+- **Database Operations**: Query or modify databases
+- **Data Transformation**: Transform, filter, or aggregate data
+- **AI Operations**: Call LLM models, use AI agents
+- **Integrations**: Interact with third-party services
+- **Logic**: Conditional branching, loops
+- **Response**: Send response back to caller
+
+## WorkflowNode Structure
+
+The complete node definition:
+
+```go
+type WorkflowNode struct {
+    ID                           string
+    WorkflowID                   string
+    Name                         string
+    Type                         NodeType
+    IntegrationType              IntegrationType
+    SubscribedEvents             []string
+    Positions                    NodePositions
+    IntegrationSettings          map[string]any
+    Settings                     NodeSettings
+    ExpressionSelectedProperties []string
+    ProvidedByAgent              []string
+    Inputs                       []NodeInput
+    UsageContext                 string
+    ParentID                     string
+    
+    TriggerNodeOpts TriggerNodeOpts `json:"trigger_node_opts,omitempty"`
+    ActionNodeOpts  ActionNodeOpts  `json:"action_node_opts,omitempty"`
+}
+```
+
+Location: `pkg/domain/workflow.go:100`
+
+### Key Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ID` | string | Unique node identifier |
+| `WorkflowID` | string | Parent workflow ID |
+| `Name` | string | Display name for the node |
+| `Type` | NodeType | "trigger" or "action" |
+| `IntegrationType` | IntegrationType | Which integration this node uses |
+| `SubscribedEvents` | []string | Output handles this node listens to |
+| `IntegrationSettings` | map[string]any | Configuration passed to integration |
+| `Settings` | NodeSettings | Node execution settings |
+| `Inputs` | []NodeInput | Input connection configuration |
+| `UsageContext` | string | Context: "workflow", "tool", "llm_provider" |
+| `ParentID` | string | Parent node ID for hierarchical structures |
+
+## Node Inputs
+
+Nodes receive data through inputs:
+
+```go
+type NodeInput struct {
+    InputID          string
+    SubscribedEvents []string
+}
+```
+
+Each input:
+- Has a unique `InputID` (e.g., `"input-node123-0"`)
+- Subscribes to output events from upstream nodes
+- Can receive data from multiple upstream nodes
+
+Location: `pkg/domain/workflow.go:138`
+
+### Multiple Inputs
+
+Nodes can have multiple inputs:
+
+```go
+node := WorkflowNode{
+    ID: "merge-node",
+    Inputs: []NodeInput{
+        {InputID: "input-merge-node-0", SubscribedEvents: []string{"output-node1-0"}},
+        {InputID: "input-merge-node-1", SubscribedEvents: []string{"output-node2-0"}},
+    },
+}
+```
+
+<Note>
+Nodes with multiple inputs wait for **all** inputs to receive data before executing (unless they're AI Agent nodes which handle inputs differently).
+</Note>
+
+Location: `pkg/domain/executor/workflow_executor.go:595`
+
+## Node Outputs
+
+Nodes produce outputs that flow to downstream nodes:
+
+- **Output Format**: `output-{nodeID}-{index}`
+- **Multiple Outputs**: Nodes can have multiple output handles
+- **Output Handles**: Different outputs for success, error, or branching
+
+### Output Handles
+
+```go
+type NodeHandleType string
+
+var (
+    NodeHandleTypeDefault     NodeHandleType = "default"
+    NodeHandleTypeSuccess     NodeHandleType = "success"
+    NodeHandleTypeDestructive NodeHandleType = "destructive"
+)
+```
+
+Location: `pkg/domain/integration.go:148`
+
+## Node Settings
+
+Each node has configurable settings:
+
+```go
+type NodeSettings struct {
+    ReturnErrorAsItem       bool
+    OverwriteExecutionLimit bool
+    ExecutionLimit          int
+}
+```
+
+### Setting Details
+
+**ReturnErrorAsItem**
+- When `true`: Errors are converted to items and passed downstream
+- When `false`: Errors halt workflow execution
+- Useful for error handling workflows
+
+**OverwriteExecutionLimit**
+- Override the workflow-level execution limit
+- Allows per-node execution limits
+- Prevents infinite loops in specific nodes
+
+**ExecutionLimit**
+- Maximum times this node can execute in one workflow run
+- Only used if `OverwriteExecutionLimit` is `true`
+- Default workflow limit is 1000
+
+Location: `pkg/domain/workflow.go:143`
+
+## Trigger Node Options
+
+```go
+type TriggerNodeOpts struct {
+    EventType IntegrationTriggerEventType `json:"event_type,omitempty"`
+}
+```
+
+The `EventType` specifies what event triggers this node:
+
+- `webhook_received`
+- `cron_scheduled`
+- `poll_detected`
+- `on_error`
+- `chat_message`
+- `button_clicked`
+
+Location: `pkg/domain/workflow.go:120`
+
+## Action Node Options
+
+```go
+type ActionNodeOpts struct {
+    ActionType IntegrationActionType `json:"action_type,omitempty"`
+}
+```
+
+The `ActionType` specifies what action this node performs, which varies by integration:
+
+**HTTP Integration**:
+- `http_request`
+- `graphql_request`
+
+**Database Integrations**:
+- `execute_query`
+- `insert_row`
+- `update_row`
+- `delete_row`
+
+**AI Integrations**:
+- `chat_completion`
+- `generate_embedding`
+- `run_agent`
+
+Location: `pkg/domain/workflow.go:124`
+
+## Node Execution Flow
+
+When a node executes:
+
+### 1. Trigger Node Execution
+
+```go
+func (w *WorkflowExecutor) ExecuteTriggerNode(
+    ctx context.Context, 
+    node domain.WorkflowNode, 
+    execution NodeExecutionTask,
+) (NodeExecutionResult, error) {
+    inputID := fmt.Sprintf(InputHandleFormat, node.ID, 0)
+    inputPayload, exists := execution.PayloadByInputID[inputID]
+    if !exists {
+        return NodeExecutionResult{}, fmt.Errorf("trigger input payload not found")
+    }
+    
+    return NodeExecutionResult{
+        Output: domain.IntegrationOutput{
+            ResultJSONByOutputID: []domain.Payload{inputPayload.Payload},
+        },
+        IntegrationType:       domain.IntegrationType(node.Type),
+        IntegrationActionType: domain.IntegrationActionType(node.TriggerNodeOpts.EventType),
+    }, nil
+}
+```
+
+Trigger nodes simply pass through their input payload.
+
+Location: `pkg/domain/executor/workflow_executor.go:444`
+
+### 2. Action Node Execution
+
+```go
+func (w *WorkflowExecutor) ExecuteActionNode(
+    ctx context.Context, 
+    node domain.WorkflowNode, 
+    execution NodeExecutionTask,
+) (NodeExecutionResult, error) {
+    // 1. Skip non-workflow nodes (e.g., agent tools)
+    if node.UsageContext != "" && node.UsageContext != "workflow" {
+        return NodeExecutionResult{/* empty output */}, nil
+    }
+    
+    // 2. Select integration creator
+    integrationCreator, err := w.integrationSelector.SelectCreator(ctx, 
+        domain.SelectIntegrationParams{
+            IntegrationType: node.IntegrationType,
+        })
+    
+    // 3. Get credential ID from settings
+    credentialID := node.IntegrationSettings["credential_id"]
+    
+    // 4. Create integration instance
+    integrationExecutor, err := integrationCreator.CreateIntegration(ctx, 
+        domain.CreateIntegrationParams{
+            WorkspaceID:  w.workflow.WorkspaceID,
+            CredentialID: credentialIDString,
+        })
+    
+    // 5. Execute integration with inputs
+    output, err := integrationExecutor.Execute(ctx, domain.IntegrationInput{
+        NodeID:           node.ID,
+        PayloadByInputID: payloadByInputID,
+        Workflow:         &w.workflow,
+        IntegrationParams: domain.IntegrationParams{
+            Settings: node.IntegrationSettings,
+        },
+        ActionType: node.ActionNodeOpts.ActionType,
+    })
+    
+    return NodeExecutionResult{
+        Output:                output,
+        IntegrationType:       node.IntegrationType,
+        IntegrationActionType: node.ActionNodeOpts.ActionType,
+    }, nil
+}
+```
+
+Location: `pkg/domain/executor/workflow_executor.go:462`
+
+## Node Positions
+
+Nodes have visual positions for the workflow editor:
+
+```go
+type NodePositions struct {
+    XPosition float64
+    YPosition float64
+}
+```
+
+These are used by the UI to render the workflow graph but don't affect execution.
+
+Location: `pkg/domain/workflow.go:149`
+
+## Node Properties
+
+Integrations define properties that can be configured on nodes:
+
+```go
+type NodeProperty struct {
+    Key               string
+    Name              string
+    Description       string
+    Required          bool
+    Type              NodePropertyType
+    SubNodeProperties []NodeProperty
+    OAuthType         OAuthType
+    IsSecret          bool
+    Pattern           string
+    Options           []NodePropertyOption
+    // ... many more fields
+}
+```
+
+Location: `pkg/domain/node.go:66`
+
+### Property Types
+
+```go
+const (
+    NodePropertyType_String        = "string"
+    NodePropertyType_Text          = "text"
+    NodePropertyType_Integer       = "integer"
+    NodePropertyType_Boolean       = "boolean"
+    NodePropertyType_Array         = "array"
+    NodePropertyType_Map           = "map"
+    NodePropertyType_OAuth         = "oauth"
+    NodePropertyType_CodeEditor    = "code_editor"
+    NodePropertyType_KeyValueTable = "key_value_table"
+    // ... many more
+)
+```
+
+Location: `pkg/domain/node.go:7`
+
+## Expression Support
+
+Node properties support expressions for dynamic values:
+
+```go
+type WorkflowNode struct {
+    ExpressionSelectedProperties []string
+    // ...
+}
+```
+
+Expressions allow:
+- Referencing upstream node outputs
+- Dynamic value computation
+- Conditional logic
+- Data transformation
+
+**Example Expression**:
+```javascript
+{{ $node.httpRequest.output.data.user.email }}
+```
+
+## Usage Contexts
+
+Nodes can serve different purposes based on context:
+
+```go
+type ActionUsageContext string
+
+const (
+    UsageContextWorkflow       ActionUsageContext = "workflow"
+    UsageContextTool           ActionUsageContext = "tool"
+    UsageContextLLMProvider    ActionUsageContext = "llm_provider"
+    UsageContextMemoryProvider ActionUsageContext = "memory_provider"
+)
+```
+
+- **workflow**: Normal workflow node (executes)
+- **tool**: AI agent tool (available to agent)
+- **llm_provider**: LLM configuration (used by agent)
+- **memory_provider**: Memory configuration (used by agent)
+
+Location: `pkg/domain/integration.go:138`
+
+## Node Examples
+
+### HTTP Request Node
+
+```json
+{
+  "id": "http-node-1",
+  "name": "Fetch User Data",
+  "type": "action",
+  "integrationType": "http",
+  "actionNodeOpts": {
+    "actionType": "http_request"
+  },
+  "integrationSettings": {
+    "method": "GET",
+    "url": "https://api.example.com/users/{{ $trigger.user_id }}",
+    "headers": {
+      "Authorization": "Bearer {{ $credential.token }}"
+    }
+  },
+  "inputs": [
+    {
+      "inputID": "input-http-node-1-0",
+      "subscribedEvents": ["output-trigger-node-0"]
+    }
+  ]
+}
+```
+
+### Condition Node
+
+```json
+{
+  "id": "condition-node-1",
+  "name": "Check Status",
+  "type": "action",
+  "integrationType": "condition",
+  "actionNodeOpts": {
+    "actionType": "evaluate"
+  },
+  "integrationSettings": {
+    "conditions": [
+      {
+        "field": "{{ $node.httpNode1.output.status }}",
+        "operator": "equals",
+        "value": "active"
+      }
+    ]
+  },
+  "inputs": [
+    {
+      "inputID": "input-condition-node-1-0",
+      "subscribedEvents": ["output-http-node-1-0"]
+    }
+  ]
+}
+```
+
+### Database Query Node
+
+```json
+{
+  "id": "postgres-node-1",
+  "name": "Get Orders",
+  "type": "action",
+  "integrationType": "postgresql",
+  "actionNodeOpts": {
+    "actionType": "execute_query"
+  },
+  "integrationSettings": {
+    "credential_id": "cred-postgres-main",
+    "query": "SELECT * FROM orders WHERE user_id = $1",
+    "parameters": ["{{ $node.httpNode1.output.user.id }}"]
+  },
+  "inputs": [
+    {
+      "inputID": "input-postgres-node-1-0",
+      "subscribedEvents": ["output-condition-node-1-0"]
+    }
+  ]
+}
+```
+
+### AI Agent Node
+
+```json
+{
+  "id": "agent-node-1",
+  "name": "Customer Support Agent",
+  "type": "action",
+  "integrationType": "ai_agent",
+  "actionNodeOpts": {
+    "actionType": "run_agent"
+  },
+  "integrationSettings": {
+    "system_prompt": "You are a helpful customer support agent.",
+    "user_message": "{{ $trigger.message }}",
+    "model": "gpt-4"
+  },
+  "inputs": [
+    {
+      "inputID": "input-agent-node-1-0",
+      "subscribedEvents": ["output-trigger-node-0"]
+    }
+  ]
+}
+```
+
+## Error Handling in Nodes
+
+When a node encounters an error:
+
+### Default Behavior
+
+1. Error is logged
+2. Workflow execution halts
+3. Error event is published
+4. Execution marked as failed
+
+### With ReturnErrorAsItem
+
+```go
+type ErrorItem struct {
+    ErrorMessage string `json:"error_message"`
+}
+```
+
+1. Error is wrapped in an ErrorItem
+2. Error item is passed to downstream nodes
+3. Workflow continues execution
+4. Downstream nodes can handle the error
+
+Location: `pkg/domain/executor/workflow_executor.go:746`
+
+## Node Execution Tracking
+
+Each node execution is tracked:
+
+```go
+type NodeExecution struct {
+    ID                     string
+    NodeID                 string
+    IntegrationType        IntegrationType
+    IntegrationActionType  IntegrationActionType
+    StartedAt              time.Time
+    EndedAt                time.Time
+    ExecutionOrder         int64
+    InputItemsCount        InputItemsCount
+    InputItemsSizeInBytes  InputItemsSizeInBytes
+    OutputItemsCount       OutputItemsCount
+    OutputItemsSizeInBytes OutputItemsSizeInBytes
+}
+```
+
+This provides:
+- Performance metrics
+- Resource usage tracking
+- Execution ordering
+- Debugging information
+
+Location: `pkg/domain/execution.go:19`
+
+## Best Practices
+
+<Check>
+**Do's**
+- Use descriptive node names
+- Set execution limits on loop nodes
+- Enable ReturnErrorAsItem for error handling nodes
+- Use expressions for dynamic configuration
+- Configure proper credential IDs
+</Check>
+
+<Warning>
+**Don'ts**
+- Don't create circular dependencies without limits
+- Don't hardcode sensitive data in settings
+- Don't ignore node execution errors
+- Don't connect incompatible node types
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Integrations" icon="plug" href="/concepts/integrations">
+    Explore available node integrations
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/concepts/workflows">
+    Understand workflow structure
+  </Card>
+</CardGroup>

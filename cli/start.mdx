@@ -1,0 +1,215 @@
+---
+title: flowbaker start
+description: Start the Flowbaker executor service with automatic setup
+---
+
+The `start` command launches the Flowbaker executor service. On first run, it automatically guides you through the setup process.
+
+## Usage
+
+```bash
+flowbaker start [flags]
+```
+
+## Description
+
+The start command:
+- Detects if this is the first run and triggers setup wizard if needed
+- Starts a health check server on port 8081 during setup
+- Loads executor configuration and workspace assignments
+- Establishes authenticated connection to the Flowbaker API
+- Starts the HTTP server to receive workflow execution requests
+- Handles graceful shutdown on SIGINT/SIGTERM signals
+
+## Flags
+
+This command supports all [global flags](/cli/overview#global-flags):
+
+- `--debug` - Enable debug logging
+- `--api-url` - Override API URL
+
+## First-Time Setup
+
+When you run `start` for the first time, Flowbaker will:
+
+1. Start a health check server on port 8081
+2. Guide you through the setup process
+3. Register the executor with the Flowbaker platform
+4. Configure workspace assignments
+5. Start the executor service
+
+### Setup Example
+
+```bash
+flowbaker start
+```
+
+**Output:**
+
+```
+Starting initial setup...
+Health check server started on :8081
+
+Welcome to Flowbaker Executor Setup!
+
+Please follow the instructions to register this executor with your Flowbaker account.
+
+1. Visit: https://app.flowbaker.com/executors/register
+2. Follow the on-screen instructions
+3. The executor will be registered automatically
+
+Waiting for registration...
+```
+
+## Starting the Executor
+
+After initial setup, the `start` command launches the executor service:
+
+```bash
+flowbaker start
+```
+
+**Output:**
+
+```
+INF Starting executor service
+INF Executor configuration loaded executor_id=exec_abc123def456 api_base_url=https://api.flowbaker.com
+INF Flowbaker client with signature-based auth ready
+INF HTTP server listening on :8081
+```
+
+## With Debug Logging
+
+Enable verbose logging to troubleshoot issues:
+
+```bash
+flowbaker start --debug
+```
+
+**Output:**
+
+```
+DBG Debug logging enabled
+INF Starting executor service
+DBG Loading configuration from storage
+INF Executor configuration loaded executor_id=exec_abc123def456 api_base_url=https://api.flowbaker.com
+DBG Initializing Flowbaker client
+DBG Ed25519 private key loaded
+INF Flowbaker client with signature-based auth ready
+DBG Building executor dependencies
+DBG Initializing HTTP server
+INF HTTP server listening on :8081
+```
+
+## With Custom API URL
+
+Connect to a custom Flowbaker API endpoint:
+
+```bash
+flowbaker start --api-url https://custom-api.flowbaker.com
+```
+
+## Server Details
+
+The executor runs an HTTP server that:
+
+- **Port:** 8081 (default)
+- **Endpoints:**
+  - `GET /health` - Health check endpoint
+  - `POST /workspaces/` - Workspace registration (setup mode only)
+  - Workflow execution endpoints (when running)
+- **Authentication:** Ed25519 signature-based authentication
+- **Graceful Shutdown:** Responds to SIGINT (Ctrl+C) and SIGTERM signals
+
+## Stopping the Executor
+
+To stop the executor gracefully, press `Ctrl+C` or send a SIGTERM signal:
+
+```bash
+# Press Ctrl+C in the terminal running the executor
+```
+
+**Output:**
+
+```
+^C
+INF Shutting down gracefully...
+INF HTTP server stopped
+INF Executor service stopped
+```
+
+## Error Handling
+
+### No Configuration Found
+
+If configuration is missing or incomplete:
+
+```bash
+flowbaker start
+```
+
+**Output:**
+
+```
+FATAL No configuration found. Run 'start' to set up.
+```
+
+**Solution:** The start command should handle this automatically. If it doesn't, run:
+
+```bash
+flowbaker reset
+flowbaker start
+```
+
+### No Workspace Assignments
+
+```
+FATAL No workspace API keys found in config
+```
+
+**Solution:** Ensure workspaces are assigned to your executor in the Flowbaker dashboard.
+
+### Port Already in Use
+
+```
+ERROR HTTP server failed error="listen tcp :8081: bind: address already in use"
+```
+
+**Solution:** Another process is using port 8081. Stop the conflicting service or change the port configuration.
+
+## Running in Production
+
+For production deployments, consider:
+
+### Using a Process Manager
+
+```bash
+# systemd service example
+sudo systemctl start flowbaker
+```
+
+### Docker Container
+
+```bash
+docker run -d \
+  --name flowbaker-executor \
+  -p 8081:8081 \
+  -v /path/to/config:/root/.flowbaker \
+  flowbaker/executor start
+```
+
+### Background Process
+
+```bash
+# Run in background with nohup
+nohup flowbaker start > flowbaker.log 2>&1 &
+
+# Save PID for later
+echo $! > flowbaker.pid
+```
+
+## See Also
+
+- [status](/cli/status) - Check executor status
+- [reset](/cli/reset) - Reset configuration
+- [workspaces](/cli/workspaces) - Manage workspace assignments

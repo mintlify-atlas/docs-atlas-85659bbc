@@ -1,0 +1,654 @@
+---
+title: Integrations
+description: Understanding Flowbaker's integration system and available integrations
+---
+
+## Overview
+
+Integrations in Flowbaker enable workflows to interact with external services, perform computations, and process data. Each integration provides a set of triggers and actions that can be used in workflow nodes.
+
+## Integration Architecture
+
+The integration system is built on a modular architecture:
+
+```go
+type Integration struct {
+    ID                   IntegrationType
+    Name                 string
+    Description          string
+    CredentialProperties []NodeProperty
+    Actions              []IntegrationAction
+    Triggers             []IntegrationTrigger
+    EmbeddingModels      []IntegrationEmbeddingModel
+    IsGroup              bool
+    CanTestConnection    bool
+    IsCredentialOptional bool
+}
+```
+
+Location: `pkg/domain/integration.go:86`
+
+### Integration Components
+
+Each integration can provide:
+
+1. **Creator**: Creates integration instances for execution
+2. **Poller**: Handles polling-based triggers
+3. **Connection Tester**: Validates credentials
+4. **HTTP Client Provider**: Provides authenticated HTTP clients
+
+## Integration Types
+
+Flowbaker includes 40+ integrations across various categories:
+
+### Communication
+
+- **Slack** - Send messages, manage channels, react to events
+- **Discord** - Send messages, manage servers, webhooks
+- **Telegram** - Send messages, manage bots
+- **Teams** - Microsoft Teams messaging and collaboration
+- **Resend** - Email sending service
+- **Gmail** - Email operations with Gmail
+
+### Databases
+
+- **PostgreSQL** - SQL queries and operations
+- **MongoDB** - NoSQL database operations
+- **Redis** - Key-value store operations
+- **Snowflake** - Cloud data warehouse queries
+
+### AI & Machine Learning
+
+- **OpenAI** - GPT models, embeddings, completions
+- **Anthropic (Claude)** - Claude AI models
+- **Gemini** - Google's AI models
+- **Groq** - Fast inference AI models
+- **AI Agent** - Custom AI agents with tools
+- **Knowledge** - Knowledge base operations
+- **Flowbaker Agent Memory** - Agent memory management
+
+### Cloud Storage
+
+- **AWS S3** - Object storage operations
+- **Dropbox** - File storage and sharing
+- **Google Drive** - Drive file operations
+
+### Developer Tools
+
+- **HTTP** - Generic HTTP requests
+- **Webhook** - Receive HTTP webhooks
+- **GitHub** - Repository operations, issues, PRs
+- **GitLab** - GitLab repository operations
+
+### Project Management
+
+- **Linear** - Issue tracking and project management
+- **Jira** - Atlassian Jira operations
+- **Notion** - Notion workspace operations
+- **Pipedrive** - CRM operations
+
+### Data Processing
+
+- **Transform** - Data transformation operations
+- **Condition** - Conditional logic and branching
+- **Manipulation** - Data manipulation utilities
+- **Split Array** - Split arrays into items
+- **Items to Item** - Combine multiple items
+- **Base64** - Base64 encoding/decoding
+- **JWT** - JWT token operations
+- **Raw File to Item** - Convert files to items
+
+### Scheduling & Triggers
+
+- **Cron** - Time-based scheduling
+- **Click** - Manual trigger buttons
+- **Chat** - Chat-based triggers
+- **On Error** - Error handling triggers
+
+### Other Services
+
+- **Google Sheets** - Spreadsheet operations
+- **YouTube** - YouTube API operations
+- **Stripe** - Payment processing
+- **Bright Data** - Web scraping and data collection
+- **Startups Watch** - Startup tracking service
+- **Content Classifier** - Content classification and routing
+
+Location: `internal/initialization/integrations.go:59`
+
+## Integration Definition
+
+### Integration Types Enum
+
+```go
+const (
+    IntegrationType_Discord              IntegrationType = "discord"
+    IntegrationType_Slack                IntegrationType = "slack"
+    IntegrationType_OpenAI               IntegrationType = "openai"
+    IntegrationType_HTTP                 IntegrationType = "http"
+    IntegrationType_PostgreSQL           IntegrationType = "postgresql"
+    IntegrationType_MongoDB              IntegrationType = "mongodb"
+    IntegrationType_AIAgent              IntegrationType = "ai_agent"
+    IntegrationType_Webhook              IntegrationType = "webhook"
+    // ... 40+ total integrations
+)
+```
+
+Location: `pkg/domain/integration.go:28`
+
+## Integration Actions
+
+Actions are operations that integrations can perform:
+
+```go
+type IntegrationAction struct {
+    ID                            string
+    ActionType                    IntegrationActionType
+    Name                          string
+    Description                   string
+    Properties                    []NodeProperty
+    HandlesByContext              map[ActionUsageContext]ContextHandles
+    SupportedContexts             []ActionUsageContext
+    CombinedContexts              []ActionUsageContext
+    IsNonAvailableForDefaultOAuth bool
+    Decoration                    NodeDecoration
+}
+```
+
+Location: `pkg/domain/integration.go:178`
+
+### Action Properties
+
+- **ActionType**: Unique identifier for the action (e.g., `http_request`, `send_message`)
+- **Properties**: Configurable properties for the action
+- **HandlesByContext**: Input/output handles for different usage contexts
+- **SupportedContexts**: Where this action can be used (workflow, tool, etc.)
+
+### Example: HTTP Request Action
+
+```go
+IntegrationAction{
+    ID:         "http-request",
+    ActionType: "http_request",
+    Name:       "HTTP Request",
+    Description: "Make an HTTP request to any endpoint",
+    Properties: []NodeProperty{
+        {
+            Key:      "method",
+            Name:     "Method",
+            Type:     NodePropertyType_String,
+            Required: true,
+            Options: []NodePropertyOption{
+                {Label: "GET", Value: "GET"},
+                {Label: "POST", Value: "POST"},
+                {Label: "PUT", Value: "PUT"},
+                {Label: "DELETE", Value: "DELETE"},
+            },
+        },
+        {
+            Key:         "url",
+            Name:        "URL",
+            Type:        NodePropertyType_String,
+            Required:    true,
+            Description: "The URL to send the request to",
+        },
+    },
+}
+```
+
+## Integration Triggers
+
+Triggers define when workflows should start:
+
+```go
+type IntegrationTrigger struct {
+    ID                            string
+    EventType                     IntegrationTriggerEventType
+    Name                          string
+    Description                   string
+    Properties                    []NodeProperty
+    HandlesByContext              map[ActionUsageContext]ContextHandles
+    IsNonAvailableForDefaultOAuth bool
+    Decoration                    NodeDecoration
+}
+```
+
+Location: `pkg/domain/integration.go:122`
+
+### Trigger Types
+
+1. **Webhook Triggers**: Respond to HTTP requests
+2. **Polling Triggers**: Periodically check for changes
+3. **Scheduled Triggers**: Execute on a schedule (cron)
+4. **Event Triggers**: React to system events
+
+### Example: Webhook Trigger
+
+```go
+IntegrationTrigger{
+    EventType:   "webhook_received",
+    Name:        "Webhook",
+    Description: "Trigger when a webhook is received",
+    Properties: []NodeProperty{
+        {
+            Key:      "path",
+            Name:     "Path",
+            Type:     NodePropertyType_Endpoint,
+            Required: true,
+        },
+    },
+}
+```
+
+## Credential Management
+
+Integrations can require credentials for authentication:
+
+### Credential Properties
+
+```go
+type Integration struct {
+    CredentialProperties []NodeProperty
+    CanTestConnection    bool
+    IsCredentialOptional bool
+}
+```
+
+### OAuth Integrations
+
+Some integrations support OAuth authentication:
+
+```go
+type OAuthType string
+
+var (
+    OAuthTypeGoogle         OAuthType = "google"
+    OAuthTypeSlack          OAuthType = "slack"
+    OAuthTypeDropbox        OAuthType = "dropbox"
+    OAuthTypeGitHub         OAuthType = "github"
+    OAuthTypeLinear         OAuthType = "linear"
+    OAuthTypeJira           OAuthType = "jira"
+    OAuthTypeNotion         OAuthType = "notion"
+    OAuthTypeMicrosoftTeams OAuthType = "microsoft_teams"
+    OAuthTypeGitLab         OAuthType = "gitlab"
+)
+```
+
+Location: `pkg/domain/node.go:52`
+
+### Connection Testing
+
+Integrations can implement connection testing:
+
+```go
+type IntegrationConnectionTester interface {
+    TestConnection(ctx context.Context, params TestConnectionParams) (bool, error)
+}
+
+type TestConnectionParams struct {
+    Credential domain.Credential
+}
+```
+
+This validates credentials before workflows execute.
+
+## Integration Registration
+
+Integrations are registered at startup:
+
+```go
+var integrationRegisterParamsList = []integrationRegisterParams{
+    {
+        IntegrationType:        domain.IntegrationType_Discord,
+        NewCreator:             discord.NewDiscordIntegrationCreator,
+        NewPollingEventHandler: discord.NewDiscordPollingHandler,
+        NewConnectionTester:    discord.NewDiscordConnectionTester,
+    },
+    {
+        IntegrationType: domain.IntegrationType_HTTP,
+        NewCreator:      http.NewHTTPIntegrationCreator,
+    },
+    // ... 40+ integrations
+}
+```
+
+Location: `internal/initialization/integrations.go:59`
+
+### Registration Components
+
+- **NewCreator**: Factory for creating integration instances
+- **NewPollingEventHandler**: Handler for polling triggers
+- **NewHTTPOAuthClientProvider**: OAuth HTTP client provider
+- **NewHTTPDefaultClientProvider**: Default HTTP client provider
+- **NewConnectionTester**: Connection validation
+
+## Integration Execution
+
+When a node executes an integration:
+
+### 1. Select Integration Creator
+
+```go
+integrationCreator, err := integrationSelector.SelectCreator(ctx, 
+    domain.SelectIntegrationParams{
+        IntegrationType: node.IntegrationType,
+    })
+```
+
+### 2. Create Integration Instance
+
+```go
+integrationExecutor, err := integrationCreator.CreateIntegration(ctx, 
+    domain.CreateIntegrationParams{
+        WorkspaceID:  workspaceID,
+        CredentialID: credentialID,
+    })
+```
+
+### 3. Execute Integration
+
+```go
+output, err := integrationExecutor.Execute(ctx, domain.IntegrationInput{
+    NodeID:           node.ID,
+    PayloadByInputID: payloadByInputID,
+    IntegrationParams: domain.IntegrationParams{
+        Settings: node.IntegrationSettings,
+    },
+    ActionType: actionType,
+})
+```
+
+Location: `pkg/domain/executor/workflow_executor.go:462`
+
+## Integration Dependencies
+
+Integrations receive common dependencies:
+
+```go
+type IntegrationDeps struct {
+    FlowbakerClient            flowbaker.ClientInterface
+    ExecutorTaskPublisher      ExecutorTaskPublisher
+    TaskSchedulerService       TaskSchedulerService
+    ParameterBinder            IntegrationParameterBinder
+    IntegrationSelector        IntegrationSelector
+    ExecutorStorageManager     ExecutorStorageManager
+    ExecutorCredentialManager  ExecutorCredentialManager
+    ExecutorIntegrationManager ExecutorIntegrationManager
+    ExecutorScheduleManager    ExecutorScheduleManager
+    ExecutorKnowledgeManager   ExecutorKnowledgeManager
+    ExecutorModelManager       ExecutorModelManager
+}
+```
+
+Location: `pkg/domain/integration.go:266`
+
+These dependencies provide:
+- API client for Flowbaker backend
+- Storage access
+- Credential management
+- Task scheduling
+- Knowledge base access
+- AI model management
+
+## Peekable Integrations
+
+Some integrations support "peeking" - previewing available data:
+
+```go
+type IntegrationPeeker interface {
+    Peek(ctx context.Context, params PeekParams) (PeekResult, error)
+}
+
+type PeekParams struct {
+    PeekableType domain.IntegrationPeekableType
+    PayloadJSON  []byte
+    Pagination   domain.PaginationParams
+    UserID       string
+    WorkspaceID  string
+}
+```
+
+Examples:
+- **Slack**: Preview available channels
+- **GitHub**: Preview repositories
+- **Database**: Preview tables and columns
+- **Google Drive**: Preview folders
+
+### Pagination Types
+
+```go
+const (
+    PeekablePaginationType_None   = "none"
+    PeekablePaginationType_Cursor = "cursor"
+    PeekablePaginationType_Offset = "offset"
+)
+```
+
+Location: `pkg/domain/integration.go:20`
+
+## Usage Contexts
+
+Integrations can operate in different contexts:
+
+```go
+type ActionUsageContext string
+
+const (
+    UsageContextWorkflow       ActionUsageContext = "workflow"
+    UsageContextTool           ActionUsageContext = "tool"
+    UsageContextLLMProvider    ActionUsageContext = "llm_provider"
+    UsageContextMemoryProvider ActionUsageContext = "memory_provider"
+)
+```
+
+- **workflow**: Normal workflow execution
+- **tool**: Available as AI agent tool
+- **llm_provider**: Provides LLM capabilities
+- **memory_provider**: Provides memory for agents
+
+Location: `pkg/domain/integration.go:138`
+
+## Node Handles
+
+Integrations define input and output handles:
+
+```go
+type NodeHandle struct {
+    Index               int
+    Type                NodeHandleType
+    Position            NodeHandlePosition
+    Text                string
+    UsageContext        ActionUsageContext
+    AllowedIntegrations []IntegrationType
+}
+
+type ContextHandles struct {
+    Input  []NodeHandle
+    Output []NodeHandle
+}
+```
+
+### Handle Types
+
+```go
+var (
+    NodeHandleTypeDefault     NodeHandleType = "default"
+    NodeHandleTypeSuccess     NodeHandleType = "success"
+    NodeHandleTypeDestructive NodeHandleType = "destructive"
+)
+```
+
+Location: `pkg/domain/integration.go:151`
+
+### Handle Positions
+
+```go
+var (
+    NodeHandlePositionTop    NodeHandlePosition = "top"
+    NodeHandlePositionBottom NodeHandlePosition = "bottom"
+    NodeHandlePositionLeft   NodeHandlePosition = "left"
+    NodeHandlePositionRight  NodeHandlePosition = "right"
+)
+```
+
+Location: `pkg/domain/integration.go:157`
+
+## Creating Custom Integrations
+
+To add a new integration:
+
+### 1. Define Integration Structure
+
+```go
+package myintegration
+
+import "github.com/flowbaker/flowbaker/pkg/domain"
+
+type MyIntegrationCreator struct {
+    deps domain.IntegrationDeps
+}
+
+func NewMyIntegrationCreator(deps domain.IntegrationDeps) domain.IntegrationCreator {
+    return &MyIntegrationCreator{deps: deps}
+}
+```
+
+### 2. Implement Creator Interface
+
+```go
+func (c *MyIntegrationCreator) CreateIntegration(
+    ctx context.Context, 
+    params domain.CreateIntegrationParams,
+) (domain.IntegrationExecutor, error) {
+    return &MyIntegration{
+        credentialID: params.CredentialID,
+        workspaceID:  params.WorkspaceID,
+        deps:         c.deps,
+    }, nil
+}
+```
+
+### 3. Implement Executor Interface
+
+```go
+type MyIntegration struct {
+    credentialID string
+    workspaceID  string
+    deps         domain.IntegrationDeps
+}
+
+func (i *MyIntegration) Execute(
+    ctx context.Context, 
+    input domain.IntegrationInput,
+) (domain.IntegrationOutput, error) {
+    // Get credentials
+    cred, err := i.deps.ExecutorCredentialManager.GetFullCredential(ctx, i.credentialID)
+    
+    // Bind parameters from settings
+    var params MyActionParams
+    err = i.deps.ParameterBinder.BindToStruct(ctx, input, &params, nil)
+    
+    // Execute integration logic
+    result := i.performAction(params)
+    
+    // Return output
+    return domain.IntegrationOutput{
+        ResultJSONByOutputID: []domain.Payload{resultJSON},
+    }, nil
+}
+```
+
+### 4. Register Integration
+
+Add to `internal/initialization/integrations.go`:
+
+```go
+{
+    IntegrationType:     domain.IntegrationType_MyIntegration,
+    NewCreator:          myintegration.NewMyIntegrationCreator,
+    NewConnectionTester: myintegration.NewMyIntegrationConnectionTester,
+}
+```
+
+## Integration Input/Output
+
+### Integration Input
+
+```go
+type IntegrationInput struct {
+    NodeID            string
+    PayloadByInputID  map[string]Payload
+    IntegrationParams IntegrationParams
+    ActionType        IntegrationActionType
+    Workflow          *Workflow
+}
+```
+
+Location: `pkg/domain/integration.go:199`
+
+### Integration Output
+
+```go
+type IntegrationOutput struct {
+    ResultJSONByOutputID []Payload
+}
+```
+
+Each output handle can produce a different payload.
+
+Location: `pkg/domain/integration.go:241`
+
+## Best Practices
+
+<Check>
+**Do's**
+- Implement connection testing for integrations with credentials
+- Provide clear property descriptions
+- Support expression evaluation in properties
+- Handle errors gracefully
+- Use appropriate handle types (success/error)
+</Check>
+
+<Warning>
+**Don'ts**
+- Don't expose credentials in logs
+- Don't assume credentials are always present
+- Don't block indefinitely in Execute()
+- Don't ignore context cancellation
+</Warning>
+
+## Integration Examples
+
+See individual integration documentation:
+
+<CardGroup cols={3}>
+  <Card title="HTTP" icon="globe" href="/integrations/http">
+    Make HTTP requests
+  </Card>
+  <Card title="PostgreSQL" icon="database" href="/integrations/postgresql">
+    Database operations
+  </Card>
+  <Card title="OpenAI" icon="brain" href="/integrations/openai">
+    AI completions
+  </Card>
+  <Card title="Slack" icon="slack" href="/integrations/slack">
+    Slack messaging
+  </Card>
+  <Card title="GitHub" icon="github" href="/integrations/github">
+    Repository operations
+  </Card>
+  <Card title="Transform" icon="arrows-rotate" href="/integrations/transform">
+    Data transformation
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Nodes" icon="circle-nodes" href="/concepts/nodes">
+    Learn how nodes use integrations
+  </Card>
+  <Card title="Executors" icon="server" href="/concepts/executors">
+    Understand executor operations
+  </Card>
+</CardGroup>

@@ -1,0 +1,327 @@
+---
+title: Tool API
+description: Tool interface for extending AI agents with custom functions
+---
+
+## Tool
+
+The `Tool` interface defines how tools/functions are exposed to AI agents.
+
+```go
+type Tool interface {
+    Name() string
+    Description() string
+    Parameters() map[string]any
+    Execute(ctx context.Context, args string) (string, error)
+}
+```
+
+### Methods
+
+<ResponseField name="Name" type="func() string">
+  Returns the unique name of the tool (used by LLM to invoke it)
+</ResponseField>
+
+<ResponseField name="Description" type="func() string">
+  Returns a description of what the tool does (helps LLM decide when to use it)
+</ResponseField>
+
+<ResponseField name="Parameters" type="func() map[string]any">
+  Returns JSON Schema describing the tool's parameters
+</ResponseField>
+
+<ResponseField name="Execute" type="func(ctx, string) (string, error)">
+  Executes the tool with JSON-encoded arguments
+  
+  **Parameters:**
+  - `ctx` - Context for cancellation and deadlines
+  - `args` - JSON string containing tool arguments
+  
+  **Returns:**
+  - `string` - Result to send back to the LLM
+  - `error` - Error if execution fails
+</ResponseField>
+
+## Define Function
+
+Helper function to create a tool from a simple function.
+
+```go
+func Define(name, description string, parameters map[string]any, fn func(string) (string, error)) Tool
+```
+
+### Example
+
+```go
+calculator := tool.Define(
+    "calculator",
+    "Performs basic arithmetic operations",
+    map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "operation": map[string]any{
+                "type": "string",
+                "enum": []string{"add", "subtract", "multiply", "divide"},
+            },
+            "a": map[string]any{"type": "number"},
+            "b": map[string]any{"type": "number"},
+        },
+        "required": []string{"operation", "a", "b"},
+    },
+    func(args string) (string, error) {
+        var params struct {
+            Operation string  `json:"operation"`
+            A         float64 `json:"a"`
+            B         float64 `json:"b"`
+        }
+        
+        if err := json.Unmarshal([]byte(args), &params); err != nil {
+            return "", err
+        }
+        
+        var result float64
+        switch params.Operation {
+        case "add":
+            result = params.A + params.B
+        case "subtract":
+            result = params.A - params.B
+        case "multiply":
+            result = params.A * params.B
+        case "divide":
+            if params.B == 0 {
+                return "", errors.New("division by zero")
+            }
+            result = params.A / params.B
+        }
+        
+        return fmt.Sprintf("%f", result), nil
+    },
+)
+```
+
+## UserInputTool
+
+Extends `Tool` interface for tools that require human intervention.
+
+```go
+type UserInputTool interface {
+    Tool
+    SendInputEvent(ctx context.Context, toolCall types.ToolCall) error
+}
+```
+
+<ResponseField name="SendInputEvent" type="func(ctx, ToolCall) error">
+  Called when the tool needs user input. Implementation should emit an event to request input from the user.
+  
+  **Parameters:**
+  - `ctx` - Context
+  - `toolCall` - The tool call that triggered the input request
+  
+  **Returns:** Error if event emission fails
+</ResponseField>
+
+### Example
+
+```go
+type ApprovalTool struct {
+    eventEmitter func(types.StreamEvent)
+}
+
+func (t *ApprovalTool) Name() string {
+    return "request_approval"
+}
+
+func (t *ApprovalTool) Description() string {
+    return "Request user approval before proceeding"
+}
+
+func (t *ApprovalTool) Parameters() map[string]any {
+    return map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "action": map[string]any{
+                "type": "string",
+                "description": "The action requiring approval",
+            },
+        },
+    }
+}
+
+func (t *ApprovalTool) Execute(ctx context.Context, args string) (string, error) {
+    // This won't be called until user provides input
+    return "Approved", nil
+}
+
+func (t *ApprovalTool) SendInputEvent(ctx context.Context, toolCall types.ToolCall) error {
+    // Emit event requesting user input
+    t.eventEmitter(types.NewUserInputRequiredEvent(toolCall))
+    return nil
+}
+```
+
+When the agent encounters a UserInputTool:
+1. Agent pauses execution
+2. `SendInputEvent()` is called to notify user
+3. Conversation status becomes `StatusInterrupted`
+4. User provides input via `ChatRequest.ToolResults`
+5. Agent resumes with the user's input
+
+## EventEmittingTool
+
+Optional interface for tools that emit custom stream events during execution.
+
+```go
+type EventEmittingTool interface {
+    Tool
+    SetEventEmitter(emitter func(types.StreamEvent))
+}
+```
+
+<ResponseField name="SetEventEmitter" type="func(func(StreamEvent))">
+  Called by the agent to provide an event emitter function. Tools can use this to send progress updates or custom events.
+</ResponseField>
+
+### Example
+
+```go
+type ProgressTool struct {
+    emitter func(types.StreamEvent)
+}
+
+func (t *ProgressTool) SetEventEmitter(emitter func(types.StreamEvent)) {
+    t.emitter = emitter
+}
+
+func (t *ProgressTool) Execute(ctx context.Context, args string) (string, error) {
+    t.emitter(types.NewTextDeltaEvent("Starting process...\n"))
+    
+    // Do work
+    for i := 0; i < 10; i++ {
+        time.Sleep(100 * time.Millisecond)
+        t.emitter(types.NewTextDeltaEvent(fmt.Sprintf("Progress: %d%%\n", (i+1)*10)))
+    }
+    
+    return "Process complete", nil
+}
+```
+
+## FuncTool
+
+Built-in implementation of the `Tool` interface. Created using `Define()`.
+
+```go
+type FuncTool struct {
+    name        string
+    description string
+    parameters  map[string]any
+    fn          func(string) (string, error)
+}
+```
+
+You typically don't create this directly - use `Define()` instead.
+
+## Parameter Schema
+
+Tool parameters use JSON Schema format:
+
+```go
+parameters := map[string]any{
+    "type": "object",
+    "properties": map[string]any{
+        "location": map[string]any{
+            "type": "string",
+            "description": "City name or coordinates",
+        },
+        "units": map[string]any{
+            "type": "string",
+            "enum": []string{"celsius", "fahrenheit"},
+            "description": "Temperature units",
+        },
+        "include_forecast": map[string]any{
+            "type": "boolean",
+            "description": "Include 7-day forecast",
+        },
+    },
+    "required": []string{"location"},
+}
+```
+
+### Supported Types
+
+- `string` - Text values
+- `number` - Numeric values (int or float)
+- `integer` - Integer values only
+- `boolean` - true/false
+- `array` - List of items
+- `object` - Nested objects
+
+### Validation Keywords
+
+- `enum` - Restrict to specific values
+- `required` - Required properties
+- `description` - Help text for the LLM
+- `minimum`, `maximum` - Numeric ranges
+- `minLength`, `maxLength` - String length
+- `pattern` - Regex pattern
+
+## Best Practices
+
+1. **Clear Descriptions**: Write descriptions that help the LLM understand when to use the tool
+2. **Validation**: Validate input parameters in `Execute()` before processing
+3. **Error Messages**: Return clear error messages that the LLM can understand and act on
+4. **Timeouts**: Respect context deadlines for long-running operations
+5. **Idempotency**: Design tools to be safely retried if possible
+6. **Result Format**: Return structured results (JSON) when appropriate
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/tool"
+)
+
+func main() {
+    // Create tools
+    weatherTool := tool.Define(
+        "get_weather",
+        "Get current weather for a location",
+        map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "location": map[string]any{"type": "string"},
+            },
+            "required": []string{"location"},
+        },
+        func(args string) (string, error) {
+            var params struct {
+                Location string `json:"location"`
+            }
+            json.Unmarshal([]byte(args), &params)
+            
+            // Fetch weather...
+            return fmt.Sprintf("Weather in %s: Sunny, 72°F", params.Location), nil
+        },
+    )
+    
+    // Create agent with tools
+    agent, _ := agent.New(
+        agent.WithModel(model),
+        agent.WithTools(weatherTool),
+        agent.WithSystemPrompt("You are a helpful assistant."),
+    )
+    
+    // Use agent
+    result, _ := agent.ChatSync(context.Background(), agent.ChatRequest{
+        Prompt: "What's the weather in San Francisco?",
+    })
+    
+    fmt.Println(result.Steps[len(result.Steps)-1].Content)
+}
+```

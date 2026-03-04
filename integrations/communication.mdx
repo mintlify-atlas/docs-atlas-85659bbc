@@ -1,0 +1,350 @@
+---
+title: 'Communication Integrations'
+description: 'Connect with messaging platforms and email services'
+---
+
+Flowbaker integrations for messaging platforms allow you to send notifications, interact with users, and automate communication workflows.
+
+## Discord
+
+Integrate with Discord to send messages, manage channels, and respond to events.
+
+### Credentials
+
+```yaml
+token: "Bot YOUR_DISCORD_BOT_TOKEN"
+```
+
+Get your bot token from the [Discord Developer Portal](https://discord.com/developers/applications).
+
+### Actions
+
+#### Send Message
+
+```yaml
+action: send_message
+properties:
+  guild_id: "123456789"
+  channel_id: "987654321"
+  content: "Hello from Flowbaker!"
+```
+
+#### Get Messages
+
+```yaml
+action: get_messages
+properties:
+  guild_id: "123456789"
+  channel_id: "987654321"
+  amount: "50"
+  before_id: "1234567890"  # Optional
+  after_id: "1234567890"   # Optional
+```
+
+#### Get Message by ID
+
+```yaml
+action: get_message_by_id
+properties:
+  guild_id: "123456789"
+  channel_id: "987654321"
+  message_id: "1234567890"
+```
+
+#### Delete Message
+
+```yaml
+action: delete_message_by_id
+properties:
+  guild_id: "123456789"
+  channel_id: "987654321"
+  message_id: "1234567890"
+```
+
+### Triggers
+
+#### On Message Received
+
+```yaml
+trigger: on_message_received
+properties:
+  guild_id: "123456789"
+  channel_id: "987654321"
+```
+
+**Use Case Example:**
+
+```yaml
+trigger:
+  type: discord
+  event: on_message_received
+  config:
+    guild_id: "123456789"
+    channel_id: "987654321"
+
+actions:
+  - id: process
+    type: ai_agent
+    input: "{{trigger.content}}"
+    
+  - id: respond
+    type: discord
+    action: send_message
+    properties:
+      guild_id: "{{trigger.guild_id}}"
+      channel_id: "{{trigger.channel_id}}"
+      content: "{{process.output}}"
+```
+
+## Slack
+
+Send messages to Slack channels and respond to events.
+
+### Credentials
+
+Use OAuth authentication:
+
+```yaml
+slack_oauth: "xoxb-..."
+```
+
+Connect via OAuth in the Flowbaker UI.
+
+### Actions
+
+#### Send Message
+
+```yaml
+action: send_message
+properties:
+  channel_id: "C01234567"
+  message: "Deployment completed successfully!"
+```
+
+#### Get Message
+
+```yaml
+action: get_message
+properties:
+  channel_id: "C01234567"
+  message_id: "1234567890.123456"
+```
+
+#### Add Reaction
+
+```yaml
+action: add_reaction
+properties:
+  channel_id: "C01234567"
+  timestamp: "1234567890.123456"
+  emoji: "thumbsup"
+```
+
+#### Get Messages
+
+```yaml
+action: get_messages
+properties:
+  channel_id: "C01234567"
+  limit: 100
+  cursor: ""  # Optional for pagination
+```
+
+### Triggers
+
+#### Slack Message Received
+
+```yaml
+trigger: slack_message_received
+properties:
+  channel_id: "C01234567"
+```
+
+#### Reaction Added
+
+```yaml
+trigger: slack_reaction_added
+properties:
+  channel_id: "C01234567"
+```
+
+## Telegram
+
+Integrate with Telegram bots.
+
+### Credentials
+
+```yaml
+bot_token: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+```
+
+Get your bot token from [@BotFather](https://t.me/botfather) on Telegram.
+
+### Actions
+
+Send messages, photos, and interact with Telegram users.
+
+## Microsoft Teams
+
+Send messages and notifications to Microsoft Teams channels.
+
+### Credentials
+
+Configure Teams webhook URL or use app authentication.
+
+### Actions
+
+#### Send Message
+
+```yaml
+action: send_message
+properties:
+  channel_id: "team-channel-id"
+  message: "Build completed!"
+```
+
+## Resend
+
+Modern email delivery service.
+
+### Credentials
+
+```yaml
+api_key: "re_..."
+```
+
+### Actions
+
+#### Send Email
+
+```yaml
+action: send_email
+properties:
+  from: "notifications@yourdomain.com"
+  to: "user@example.com"
+  subject: "Your workflow completed"
+  html: "<h1>Success!</h1><p>Your workflow completed successfully.</p>"
+```
+
+## Gmail
+
+Send and read emails via Gmail.
+
+### Credentials
+
+Use OAuth authentication for Gmail access.
+
+### Triggers
+
+#### New Email Received
+
+Trigger workflows when new emails arrive.
+
+## Example Workflows
+
+### Multi-Channel Notification
+
+```yaml
+nodes:
+  - id: trigger
+    type: webhook
+    
+  - id: notify_slack
+    type: slack
+    action: send_message
+    properties:
+      channel_id: "C01234567"
+      message: "Alert: {{trigger.body.message}}"
+      
+  - id: notify_discord
+    type: discord
+    action: send_message
+    properties:
+      guild_id: "123456789"
+      channel_id: "987654321"
+      content: "Alert: {{trigger.body.message}}"
+      
+  - id: notify_teams
+    type: teams
+    action: send_message
+    properties:
+      channel_id: "team-channel"
+      message: "Alert: {{trigger.body.message}}"
+```
+
+### Discord Bot with AI
+
+```yaml
+nodes:
+  - id: discord_trigger
+    type: discord
+    trigger: on_message_received
+    properties:
+      guild_id: "123456789"
+      channel_id: "987654321"
+      
+  - id: ai_response
+    type: openai
+    action: chat_completion
+    properties:
+      model: "gpt-5.2"
+      messages:
+        - role: "system"
+          content:
+            - type: "text"
+              text: "You are a helpful Discord bot."
+        - role: "user"
+          content:
+            - type: "text"
+              text: "{{discord_trigger.content}}"
+      temperature: 0.7
+      
+  - id: send_reply
+    type: discord
+    action: send_message
+    properties:
+      guild_id: "{{discord_trigger.guild_id}}"
+      channel_id: "{{discord_trigger.channel_id}}"
+      content: "{{ai_response.output.content}}"
+```
+
+### Email Digest
+
+```yaml
+schedule: "0 9 * * 1"  # Every Monday at 9 AM
+
+nodes:
+  - id: fetch_data
+    type: postgresql
+    action: execute_query
+    properties:
+      query: "SELECT * FROM weekly_reports WHERE created_at > NOW() - INTERVAL '7 days'"
+      
+  - id: format_email
+    type: transform
+    input: "{{fetch_data.output}}"
+    
+  - id: send_email
+    type: resend
+    action: send_email
+    properties:
+      from: "reports@company.com"
+      to: "team@company.com"
+      subject: "Weekly Report Digest"
+      html: "{{format_email.output}}"
+```
+
+## Best Practices
+
+1. **Rate Limiting**: Respect platform rate limits (Discord: 50 requests/sec, Slack: Tier-based)
+2. **Error Handling**: Implement retries for network failures
+3. **Message Formatting**: Use platform-specific formatting (Markdown, HTML)
+4. **Permissions**: Ensure bots have necessary permissions
+5. **Testing**: Test in development channels first
+6. **Monitoring**: Track message delivery success rates
+
+## Next Steps
+
+- [Webhook Integration](/integrations/development)
+- [AI Agent Integration](/integrations/ai-agents)
+- [Integration Overview](/integrations/overview)

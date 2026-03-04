@@ -1,0 +1,226 @@
+---
+title: Provider API
+description: Language model provider interface for AI integrations
+---
+
+## LanguageModel
+
+The `LanguageModel` interface defines the contract that all LLM providers must implement.
+
+```go
+type LanguageModel interface {
+    Generate(ctx context.Context, req GenerateRequest) (*types.GenerateResponse, error)
+    Stream(ctx context.Context, req GenerateRequest) (*ProviderStream, error)
+    ID() string
+    Capabilities() Capabilities
+    ProviderName() string
+}
+```
+
+### Methods
+
+<ResponseField name="Generate" type="func(ctx, GenerateRequest) (*GenerateResponse, error)">
+  Produces a complete response in a single blocking call
+  
+  **Parameters:**
+  - `ctx` - Context for cancellation
+  - `req` - Generation request parameters
+  
+  **Returns:** Complete response with content, tool calls, and usage
+</ResponseField>
+
+<ResponseField name="Stream" type="func(ctx, GenerateRequest) (*ProviderStream, error)">
+  Creates a streaming request for incremental responses
+  
+  **Parameters:**
+  - `ctx` - Context for cancellation
+  - `req` - Generation request parameters
+  
+  **Returns:** Stream object with events channel
+  
+  **Note:** Returns error immediately if request fails to start (auth, bad params, etc.). Streaming errors go through `ProviderStream.Err()`
+</ResponseField>
+
+<ResponseField name="ID" type="func() string">
+  Returns the unique identifier for this model (e.g., "gpt-4", "claude-3-sonnet")
+</ResponseField>
+
+<ResponseField name="Capabilities" type="func() Capabilities">
+  Returns the capabilities of this model
+</ResponseField>
+
+<ResponseField name="ProviderName" type="func() string">
+  Returns the provider name (e.g., "openai", "anthropic", "gemini")
+</ResponseField>
+
+## GenerateRequest
+
+Contains all parameters for generating text.
+
+<ParamField path="Messages" type="[]types.Message">
+  Conversation history with role, content, tool calls, and results
+</ParamField>
+
+<ParamField path="System" type="string">
+  Optional system prompt to guide model behavior
+</ParamField>
+
+<ParamField path="Tools" type="[]types.Tool">
+  List of tools/functions available to the model
+</ParamField>
+
+### Example
+
+```go
+req := provider.GenerateRequest{
+    System: "You are a helpful assistant.",
+    Messages: []types.Message{
+        {
+            Role: types.RoleUser,
+            Content: "What's the weather?",
+        },
+    },
+    Tools: []types.Tool{
+        {
+            Name: "get_weather",
+            Description: "Get weather for a location",
+            Parameters: map[string]any{
+                "type": "object",
+                "properties": map[string]any{
+                    "location": map[string]any{
+                        "type": "string",
+                    },
+                },
+            },
+        },
+    },
+}
+```
+
+## Capabilities
+
+Describes what a model can do.
+
+<ParamField path="SupportsTools" type="bool">
+  Whether the model supports function/tool calling
+</ParamField>
+
+<ParamField path="SupportsStreaming" type="bool">
+  Whether the model supports streaming responses
+</ParamField>
+
+<ParamField path="SupportsVision" type="bool">
+  Whether the model supports image inputs
+</ParamField>
+
+<ParamField path="MaxContextTokens" type="int">
+  Maximum context window size in tokens
+</ParamField>
+
+<ParamField path="MaxOutputTokens" type="int">
+  Maximum output tokens the model can generate
+</ParamField>
+
+### Example
+
+```go
+caps := model.Capabilities()
+if !caps.SupportsTools {
+    return errors.New("model doesn't support tools")
+}
+
+fmt.Printf("Context window: %d tokens\n", caps.MaxContextTokens)
+```
+
+## ProviderStream
+
+Represents an active streaming response from a provider.
+
+<ParamField path="Events" type="<-chan types.StreamEvent">
+  Channel receiving stream events
+</ParamField>
+
+### Methods
+
+<ResponseField name="Err()" type="error">
+  Returns any error that occurred during streaming. Should be called after Events channel closes.
+</ResponseField>
+
+<ResponseField name="SetError(err)" type="func(error)">
+  Sets the streaming error (thread-safe). Used by provider implementations.
+</ResponseField>
+
+### Usage Pattern
+
+```go
+stream, err := model.Stream(ctx, req)
+if err != nil {
+    return err // Request failed to start
+}
+
+// Process events
+for event := range stream.Events {
+    switch e := event.(type) {
+    case *types.TextDeltaEvent:
+        fmt.Print(e.Delta)
+    case *types.ToolCallCompleteEvent:
+        fmt.Printf("Tool: %s\n", e.ToolCall.Name)
+    case *types.UsageEvent:
+        fmt.Printf("Tokens: %d\n", e.Usage.TotalTokens)
+    }
+}
+
+// Check for streaming errors
+if err := stream.Err(); err != nil {
+    return err
+}
+```
+
+## Built-in Providers
+
+Flowbaker includes providers for:
+
+- **OpenAI** - GPT-4, GPT-3.5, etc.
+- **Anthropic** - Claude models
+- **Google** - Gemini models
+- **Groq** - Fast inference
+
+See provider-specific documentation in:
+- `pkg/ai-sdk/provider/openai/`
+- `pkg/ai-sdk/provider/anthropic/`
+- `pkg/ai-sdk/provider/gemini/`
+
+## Implementing a Custom Provider
+
+To create a custom provider:
+
+1. Implement the `LanguageModel` interface
+2. Handle both `Generate()` and `Stream()` methods
+3. Convert provider-specific responses to `types.StreamEvent`
+4. Properly handle errors and context cancellation
+
+```go
+type CustomProvider struct {
+    apiKey string
+    modelID string
+}
+
+func (p *CustomProvider) ID() string {
+    return p.modelID
+}
+
+func (p *CustomProvider) ProviderName() string {
+    return "custom"
+}
+
+func (p *CustomProvider) Capabilities() provider.Capabilities {
+    return provider.Capabilities{
+        SupportsTools: true,
+        SupportsStreaming: true,
+        MaxContextTokens: 128000,
+        MaxOutputTokens: 4096,
+    }
+}
+
+// Implement Generate() and Stream()...
+```

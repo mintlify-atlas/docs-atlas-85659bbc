@@ -1,0 +1,222 @@
+---
+title: Welcome to Flowbaker
+description: Self-hosted workflow automation executor powering your integrations and AI agents
+mode: custom
+---
+
+<div className="relative overflow-hidden bg-gradient-to-br from-[#1a1d27] via-[#0f1117] to-[#1a1d27] dark:from-[#1a1d27] dark:via-[#0f1117] dark:to-[#1a1d27] py-20 px-4 sm:px-6 lg:px-8">
+  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAxMCAwIEwgMCAwIDAgMTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgyNDIsMTg0LDM5LDAuMSkiIHN0cm9rZS13aWR0aD0iMSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0idXJsKCNncmlkKSIvPjwvc3ZnPg==')] opacity-20"></div>
+  
+  <div className="relative max-w-7xl mx-auto">
+    <div className="text-center">
+      <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-white mb-6">
+        Self-hosted workflow automation
+        <span className="block text-[#f2b827] mt-2">built for developers</span>
+      </h1>
+      
+      <p className="text-lg sm:text-xl text-gray-300 dark:text-gray-300 max-w-3xl mx-auto mb-10">
+        Run workflows on your infrastructure with 40+ pre-built integrations. Connect AI agents, databases, APIs, and communication platforms with enterprise-grade security.
+      </p>
+      
+      <div className="flex flex-wrap justify-center gap-4">
+        <a 
+          href="/quickstart" 
+          className="inline-flex items-center px-8 py-3.5 rounded-lg bg-[#f2b827] hover:bg-[#ad811c] text-gray-900 font-semibold transition-colors no-underline"
+        >
+          Get started
+          <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+        </a>
+        
+        <a 
+          href="/concepts/architecture" 
+          className="inline-flex items-center px-8 py-3.5 rounded-lg border border-white/30 bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors no-underline"
+        >
+          Learn architecture
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold text-gray-900 dark:text-white mb-3">Quick start</h2>
+  <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+    Get your executor running in minutes
+  </p>
+
+  <Steps>
+    <Step title="Download the executor">
+      Download the latest binary from [GitHub releases](https://github.com/flowbaker/flowbaker/releases) or build from source:
+      
+      ```bash
+      git clone https://github.com/flowbaker/flowbaker.git
+      cd flowbaker
+      go build -o flowbaker cmd/main.go
+      ```
+    </Step>
+    
+    <Step title="Start the executor">
+      Run the executor and follow the interactive setup:
+      
+      ```bash
+      ./flowbaker start
+      ```
+      
+      The setup will guide you through:
+      - Creating an executor ID
+      - Connecting to your Flowbaker workspace
+      - Generating secure authentication keys
+    </Step>
+    
+    <Step title="Verify it's running">
+      Check the executor status:
+      
+      ```bash
+      ./flowbaker status
+      ```
+      
+      <Accordion title="Expected output">
+        ```
+        Executor Status: Running
+        Executor ID: exec_xxxxxxxxxxxxx
+        Workspace: your-workspace
+        Connected: Yes
+        Last Health Check: 2s ago
+        ```
+      </Accordion>
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold text-gray-900 dark:text-white mb-3">Explore by topic</h2>
+  <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+    Navigate documentation by your use case
+  </p>
+
+  <CardGroup cols={3}>
+    <Card title="Core concepts" icon="circle-nodes" href="/concepts/architecture">
+      Understand workflows, nodes, and the execution engine
+    </Card>
+    
+    <Card title="Deployment" icon="docker" href="/deployment/docker">
+      Deploy with Docker, binaries, or your preferred method
+    </Card>
+    
+    <Card title="Integrations" icon="plug" href="/integrations/overview">
+      Explore 40+ pre-built integrations and connectors
+    </Card>
+    
+    <Card title="AI SDK" icon="brain" href="/ai-sdk/introduction">
+      Build custom AI agents with memory and tools
+    </Card>
+    
+    <Card title="CLI reference" icon="terminal" href="/cli/overview">
+      Master the command-line interface
+    </Card>
+    
+    <Card title="API reference" icon="code" href="/api/workflow">
+      Dive into domain types and SDK interfaces
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <h2 className="text-3xl font-semibold text-gray-900 dark:text-white mb-3">Key features</h2>
+  <p className="text-base text-gray-600 dark:text-gray-400 mb-8">
+    Everything you need to automate workflows at scale
+  </p>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#f2b827] dark:hover:border-[#f2b827] overflow-hidden transition-colors bg-white dark:bg-[#1a1d27] p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-[#f2b827]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#f2b827]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Self-hosted execution</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Run workflows on your infrastructure with full control over data and security
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#f2b827] dark:hover:border-[#f2b827] overflow-hidden transition-colors bg-white dark:bg-[#1a1d27] p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-[#f2b827]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#f2b827]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">40+ integrations</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Connect Discord, GitHub, Slack, Stripe, PostgreSQL, MongoDB, and more out of the box
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#f2b827] dark:hover:border-[#f2b827] overflow-hidden transition-colors bg-white dark:bg-[#1a1d27] p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-[#f2b827]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#f2b827]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">AI agent SDK</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Build agents with OpenAI, Anthropic, or Gemini — includes memory, tools, and streaming
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div className="group block rounded-2xl border border-gray-200 dark:border-[#27272a] hover:border-[#f2b827] dark:hover:border-[#f2b827] overflow-hidden transition-colors bg-white dark:bg-[#1a1d27] p-6">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-[#f2b827]/10 flex items-center justify-center">
+          <svg className="w-6 h-6 text-[#f2b827]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Secure by default</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            API signature authentication, credential encryption, and secure workspace connections
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="rounded-2xl bg-gradient-to-br from-[#f2b827] to-[#ad811c] p-8 md:p-12 text-center">
+    <h2 className="text-3xl font-bold text-gray-900 mb-4">
+      Ready to automate your workflows?
+    </h2>
+    <p className="text-lg text-gray-900/80 mb-8 max-w-2xl mx-auto">
+      Get started in minutes with our quickstart guide or explore the full documentation.
+    </p>
+    <div className="flex flex-wrap justify-center gap-4">
+      <a 
+        href="/quickstart" 
+        className="inline-flex items-center px-8 py-3.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-white font-semibold transition-colors no-underline"
+      >
+        Start building
+      </a>
+      <a 
+        href="https://github.com/flowbaker/flowbaker" 
+        className="inline-flex items-center px-8 py-3.5 rounded-lg border-2 border-gray-900 bg-transparent hover:bg-gray-900/10 text-gray-900 font-semibold transition-colors no-underline"
+      >
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</div>

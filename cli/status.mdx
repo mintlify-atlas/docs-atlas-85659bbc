@@ -1,0 +1,242 @@
+---
+title: flowbaker status
+description: Display the current status of your Flowbaker executor
+---
+
+The `status` command shows the current configuration and state of your Flowbaker executor.
+
+## Usage
+
+```bash
+flowbaker status [flags]
+```
+
+## Description
+
+The status command displays:
+- Whether the executor is set up and ready
+- Executor ID
+- Number of assigned workspaces and their names
+- API URL being used
+- Last connection timestamp
+
+## Flags
+
+This command supports all [global flags](/cli/overview#global-flags):
+
+- `--debug` - Enable debug logging
+- `--api-url` - Override API URL (doesn't affect displayed config)
+
+## Examples
+
+### Check Executor Status
+
+```bash
+flowbaker status
+```
+
+**Output (configured executor):**
+
+```
+✅ Executor is set up and ready
+   Executor ID: exec_abc123def456
+   Workspaces (2): Production, Staging
+   API URL: https://api.flowbaker.com
+   Last connected: 2026-03-04 14:32:15
+```
+
+### Executor Not Set Up
+
+```bash
+flowbaker status
+```
+
+**Output:**
+
+```
+❌ Executor is not set up
+Run 'flowbaker start' to begin setup
+```
+
+### With Debug Logging
+
+```bash
+flowbaker status --debug
+```
+
+**Output:**
+
+```
+DBG Debug logging enabled
+DBG Loading configuration from storage
+DBG Configuration loaded successfully
+✅ Executor is set up and ready
+   Executor ID: exec_abc123def456
+   Workspaces (2): Production, Staging
+   API URL: https://api.flowbaker.com
+   Last connected: 2026-03-04 14:32:15
+```
+
+### Single Workspace
+
+```bash
+flowbaker status
+```
+
+**Output:**
+
+```
+✅ Executor is set up and ready
+   Executor ID: exec_xyz789ghi012
+   Workspaces (1): My Workspace
+   API URL: https://api.flowbaker.com
+   Last connected: 2026-03-04 09:15:42
+```
+
+### No Workspaces Assigned
+
+```bash
+flowbaker status
+```
+
+**Output:**
+
+```
+✅ Executor is set up and ready
+   Executor ID: exec_abc123def456
+   Workspaces (0): 
+   API URL: https://api.flowbaker.com
+```
+
+<Note>
+If you see 0 workspaces, assign workspaces to this executor in the Flowbaker dashboard, then restart the executor.
+</Note>
+
+### Never Connected
+
+If the executor has never successfully connected:
+
+```bash
+flowbaker status
+```
+
+**Output:**
+
+```
+✅ Executor is set up and ready
+   Executor ID: exec_new123setup456
+   Workspaces (1): Test Workspace
+   API URL: https://api.flowbaker.com
+```
+
+<Note>
+The "Last connected" line only appears after the executor has successfully connected at least once.
+</Note>
+
+## Status Information
+
+### Executor ID
+
+A unique identifier for this executor instance. Format: `exec_` followed by alphanumeric characters.
+
+```
+Executor ID: exec_abc123def456
+```
+
+This ID is generated during initial setup and used for all API communications.
+
+### Workspaces
+
+Shows the number of workspaces assigned to this executor and their names:
+
+```
+Workspaces (2): Production, Staging
+```
+
+- The number in parentheses is the count of assigned workspaces
+- Workspace names are displayed as a comma-separated list
+- Each workspace can send workflow execution requests to this executor
+
+### API URL
+
+The Flowbaker API endpoint this executor connects to:
+
+```
+API URL: https://api.flowbaker.com
+```
+
+This is set during initial setup and can be customized for self-hosted or enterprise deployments.
+
+### Last Connected
+
+Timestamp of the last successful connection to the Flowbaker API:
+
+```
+Last connected: 2026-03-04 14:32:15
+```
+
+Format: `YYYY-MM-DD HH:MM:SS` in the executor's local timezone.
+
+## Use Cases
+
+### Verify Setup
+
+After initial setup, confirm the executor is configured:
+
+```bash
+flowbaker start
+# ... setup completes ...
+flowbaker status
+```
+
+### Monitor Health
+
+Quickly check if the executor is properly configured:
+
+```bash
+flowbaker status
+```
+
+Look for the ✅ indicator and verify workspace assignments.
+
+### Troubleshooting
+
+When debugging issues, check the status:
+
+```bash
+flowbaker status --debug
+```
+
+Verify:
+- Executor ID is present
+- Workspaces are assigned
+- API URL is correct
+- Recent connection timestamp
+
+### CI/CD Integration
+
+Use status in deployment scripts:
+
+```bash
+#!/bin/bash
+if flowbaker status | grep -q "✅ Executor is set up and ready"; then
+    echo "Executor is ready"
+    exit 0
+else
+    echo "Executor needs setup"
+    exit 1
+fi
+```
+
+## Exit Codes
+
+The status command returns:
+
+- `0` - Successfully displayed status (whether configured or not)
+- `1` - Error loading configuration (with error message)
+
+## See Also
+
+- [start](/cli/start) - Start the executor service
+- [workspaces](/cli/workspaces) - List workspace details
+- [reset](/cli/reset) - Reset configuration

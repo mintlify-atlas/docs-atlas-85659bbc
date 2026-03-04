@@ -1,0 +1,368 @@
+---
+title: Security
+description: Security features and best practices for Flowbaker executor
+---
+
+## API Signature Authentication
+
+Flowbaker uses Ed25519 digital signatures to authenticate all API requests between the Flowbaker platform and your executor. This ensures that only authorized requests from your workspace can trigger workflow executions.
+
+### How It Works
+
+The signature-based authentication uses a challenge-response mechanism:
+
+1. **Request Signing:** The API creates a canonical representation of each request and signs it with an Ed25519 private key
+2. **Signature Transmission:** The signature and timestamp are sent via HTTP headers
+3. **Verification:** The executor verifies the signature using the corresponding public key
+4. **Replay Protection:** Timestamps prevent replay attacks (5-minute window)
+
+### Signature Algorithm
+
+The authentication flow is implemented in `internal/auth/api_signature.go:34-53`:
+
+**Canonical Request Format:**
+```
+{HTTP_METHOD}\n
+{REQUEST_PATH}\n
+{TIMESTAMP}\n
+{BODY_HASH}
+```
+
+**Example:**
+```
+POST
+/workspaces/ws_123/executions
+
+1709550000
+sha256:a3c8d9e7f2b1c4e6d8a7f9b2c3e4d5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2
+```
+
+### Request Headers
+
+Authenticated requests include two headers:
+
+**X-API-Signature:**
+```
+ed25519={base64_encoded_signature}
+```
+
+**X-API-Timestamp:**
+```
+{unix_timestamp}
+```
+
+### Body Hashing
+
+Request bodies are hashed using SHA-256:
+
+```go
+bodyHash := sha256.Sum256(body)
+bodyHashStr := fmt.Sprintf("sha256:%x", bodyHash)
+```
+
+Empty request bodies are hashed as empty byte arrays.
+
+### Time Window Protection
+
+Signatures are only valid within a 5-minute window (source: `internal/auth/api_signature.go:95-103`):
+
+```go
+timeDiff := now - timestamp
+if timeDiff < 0 {
+    timeDiff = -timeDiff
+}
+if timeDiff > 300 { // 5 minutes
+    return fmt.Errorf("timestamp outside allowed window")
+}
+```
+
+This prevents replay attacks where an attacker might intercept and reuse valid requests.
+
+### Workspace-Specific Authentication
+
+The executor supports two authentication modes:
+
+**1. Workspace-Aware Mode** (default)
+
+Each workspace has its own API public key stored in the executor configuration. The middleware extracts the workspace ID from the URL path and uses the corresponding key for verification (see `internal/middlewares/api_signature_middleware.go:36-110`).
+
+**2. Static Public Key Mode**
+
+A single public key authenticates all requests, useful for single-workspace deployments:
+
+```bash
+export STATIC_API_SIGNATURE_PUBLIC_KEY="your_base64_public_key"
+```
+
+### Key Management
+
+Keys are automatically generated during executor setup:
+
+**Storage Location:**
+- Config file: `~/.flowbaker/config.json`
+- Environment variables (optional override)
+
+**Key Types:**
+- **Ed25519 Private Key:** Used to sign outbound requests to the API
+- **Ed25519 Public Key:** Shared with the platform during registration
+- **X25519 Private Key:** Used for credential decryption (see below)
+- **X25519 Public Key:** Shared with the platform for credential encryption
+
+<Warning>
+**Protect your private keys!** Never commit them to version control or share them. Store them securely using secrets management.
+</Warning>
+
+## Credential Encryption
+
+Workflow credentials (API keys, OAuth tokens, database passwords) are encrypted end-to-end using a hybrid encryption scheme.
+
+### Encryption Architecture
+
+Credentials are encrypted on the Flowbaker platform and decrypted only on your executor:
+
+1. **Key Exchange:** Platform uses executor's X25519 public key
+2. **Ephemeral Key:** Each credential encrypted with unique ephemeral key pair
+3. **Shared Secret:** Computed via X25519 ECDH (Elliptic Curve Diffie-Hellman)
+4. **Key Derivation:** HKDF derives encryption key from shared secret
+5. **Encryption:** ChaCha20-Poly1305 AEAD encrypts credential payload
+
+### Decryption Process
+
+Implemented in `internal/managers/executor_credential_decryption_service.go:30-61`:
+
+```go
+// 1. Check credential expiration
+if time.Now().Unix() > encryptedCred.ExpiresAt {
+    return nil, errors.New("credential expired")
+}
+
+// 2. Compute shared secret via X25519 ECDH
+sharedSecret, err := curve25519.X25519(executorPrivateKey, encryptedCred.EphemeralPublicKey)
+
+// 3. Derive encryption key using HKDF
+encryptionKey := deriveEncryptionKey(sharedSecret, executorID)
+
+// 4. Decrypt with ChaCha20-Poly1305
+payloadJSON := decryptChaCha20Poly1305(encryptedCred.EncryptedPayload, encryptionKey, encryptedCred.Nonce)
+```
+
+### Key Derivation Function (KDF)
+
+HKDF (HMAC-based Key Derivation Function) with SHA-256 (source: `internal/managers/executor_credential_decryption_service.go:103-116`):
+
+```go
+salt := []byte("flowbaker-executor-credentials")
+info := []byte("encryption-key-" + executorID)
+keySize := 32 // ChaCha20-Poly1305 key size
+```
+
+This ensures:
+- Unique keys per executor
+- Domain separation via salt
+- Deterministic key derivation
+
+### Credential Expiration
+
+Encrypted credentials include an expiration timestamp. The executor validates this before decryption, preventing use of compromised or stale credentials.
+
+### Credential Types
+
+The executor handles multiple credential formats:
+
+**Basic Credentials:**
+- API keys
+- Username/password pairs
+- Connection strings
+
+**OAuth Credentials:**
+- Access tokens
+- Refresh tokens
+- Token metadata
+- Expiration tracking
+
+**Full Credentials:**
+- Complete credential objects with metadata
+- Used for credential management operations
+
+### Secure Credential Flow
+
+From `internal/managers/executor_credential_manager.go:25-52`:
+
+```go
+// 1. Get workflow execution context (includes workspace ID)
+workflowExecutionContext := domain.GetWorkflowExecutionContext(ctx)
+
+// 2. Fetch encrypted credential from API
+encryptedCred := client.GetCredential(ctx, workspaceID, credentialID)
+
+// 3. Decrypt locally on executor
+decryptedBytes := decryptionSvc.DecryptCredential(credential)
+
+// 4. Unmarshal into typed credential
+var result T
+json.Unmarshal(decryptedBytes, &result)
+```
+
+<Tip>
+**Credentials never stored** - Decrypted credentials exist only in memory during workflow execution and are immediately discarded.
+</Tip>
+
+## Secure Workspace Connections
+
+### Workspace Registration
+
+Workspaces can register with your executor through two methods:
+
+**1. Passcode Protection** (recommended):
+
+```bash
+export FLOWBAKER_ENABLE_STATIC_PASSCODE=true
+export FLOWBAKER_STATIC_PASSCODE="your-secure-passcode"
+```
+
+Only requests with the correct passcode can register new workspaces.
+
+**2. Open Registration** (development only):
+
+```bash
+export FLOWBAKER_ENABLE_WORKSPACE_REGISTRATION=true
+```
+
+<Warning>
+**Never use open registration in production!** Always protect your executor with a strong passcode.
+</Warning>
+
+### Workspace Assignment
+
+After registration, workspaces are stored in the executor configuration with their API public keys:
+
+```json
+{
+  "workspace_assignments": [
+    {
+      "workspace_id": "ws_123",
+      "workspace_name": "Production",
+      "api_public_key": "base64_encoded_public_key"
+    }
+  ]
+}
+```
+
+The executor validates that each request comes from a registered workspace before execution.
+
+### Connection Testing
+
+The executor provides a connection test endpoint (authenticated):
+
+```
+POST /workspaces/{workspaceID}/connection-test
+```
+
+This allows the platform to verify connectivity and authentication before deploying workflows.
+
+## Security Best Practices
+
+### Key Management
+
+<CardGroup cols={2}>
+  <Card title="Rotate Keys" icon="rotate">
+    Periodically rotate your cryptographic keys, especially after team member changes
+  </Card>
+  <Card title="Secure Storage" icon="lock">
+    Use secrets management systems (AWS Secrets Manager, HashiCorp Vault, etc.)
+  </Card>
+  <Card title="Backup Keys" icon="database">
+    Securely backup private keys to prevent data loss
+  </Card>
+  <Card title="Principle of Least Privilege" icon="user-shield">
+    Limit access to executor configuration and keys
+  </Card>
+</CardGroup>
+
+### Network Security
+
+1. **Use HTTPS:** Always configure your executor with a valid TLS certificate
+2. **Firewall Rules:** Restrict executor access to known Flowbaker IP ranges
+3. **Private Networks:** Deploy executors in private subnets when possible
+4. **VPN/Tunneling:** Use VPN or SSH tunneling for additional security layer
+
+### Runtime Security
+
+1. **Non-Root User:** Executor runs as non-root user (UID 1001) in Docker
+2. **Read-Only Filesystem:** Consider mounting config as read-only
+3. **Resource Limits:** Set memory and CPU limits to prevent DoS
+4. **Secrets Scanning:** Scan images for exposed secrets before deployment
+
+### Monitoring Security Events
+
+Monitor these security-related log events:
+
+```bash
+# Failed signature verification (potential attack)
+ERR API signature verification failed
+
+# Invalid workspace access attempt
+ERR No API key found for workspace
+
+# Credential expiration
+ERR credential expired
+
+# Unauthorized registration attempt
+ERR Failed to register workspace error="invalid passcode"
+```
+
+Set up alerts for unusual patterns:
+- Multiple signature verification failures
+- Repeated invalid workspace access
+- Credential access from unexpected sources
+
+### Environment Variables Security
+
+When using environment variables for configuration:
+
+```bash
+# Use secrets management
+export FLOWBAKER_ED25519_PRIVATE_KEY=$(aws secretsmanager get-secret-value --secret-id flowbaker-keys --query SecretString --output text)
+
+# Or use Docker secrets
+docker secret create flowbaker_ed25519_key /path/to/key
+docker service create --secret flowbaker_ed25519_key flowbaker/executor
+```
+
+### Compliance Considerations
+
+**Data Residency:**
+- Self-hosted executors keep workflow execution and credentials in your infrastructure
+- Only workflow definitions and logs are sent to Flowbaker platform
+
+**Encryption Standards:**
+- Ed25519: FIPS 186-4 compliant digital signatures
+- X25519: RFC 7748 elliptic curve Diffie-Hellman
+- ChaCha20-Poly1305: RFC 8439 authenticated encryption
+- HKDF: RFC 5869 key derivation
+
+**Audit Trail:**
+- All authenticated requests are logged with workspace ID
+- Credential access events are tracked
+- Failed authentication attempts are recorded
+
+## Security Checklist
+
+Before deploying to production:
+
+- [ ] Strong passcode configured for workspace registration
+- [ ] Private keys stored securely (secrets manager or vault)
+- [ ] TLS/HTTPS enabled with valid certificate
+- [ ] Firewall rules restrict access to known IPs
+- [ ] Executor runs as non-root user
+- [ ] Security monitoring and alerting configured
+- [ ] Log aggregation enabled for audit trail
+- [ ] Backup strategy for keys and configuration
+- [ ] Incident response plan documented
+- [ ] Regular security updates scheduled
+
+## Related Resources
+
+- [Monitoring](/operations/monitoring) - Monitor security events and logs
+- [Troubleshooting](/operations/troubleshooting) - Debug authentication issues
+- [Configuration](/deployment/configuration) - Configure security settings

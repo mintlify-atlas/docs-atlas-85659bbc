@@ -1,0 +1,518 @@
+---
+title: 'Utility Integrations'
+description: 'Data transformation, scheduling, and workflow utilities'
+---
+
+Flowbaker provides utility integrations for common workflow operations like scheduling, data transformation, and conditional logic.
+
+## Cron (Schedule)
+
+Schedule workflows to run at specific times using cron expressions or simple intervals.
+
+### Triggers
+
+#### Simple Schedule
+
+```yaml
+trigger: simple
+properties:
+  interval: "hour"
+  hour: 2  # Every 2 hours
+```
+
+**Intervals:**
+- `minute`: Run every N minutes
+- `hour`: Run every N hours  
+- `day`: Run every N days
+
+#### Cron Expression
+
+```yaml
+trigger: cron
+properties:
+  cron: "0 9 * * 1"  # Every Monday at 9 AM UTC
+```
+
+**Cron Format:**
+
+```
+* * * * *
+│ │ │ │ │
+│ │ │ │ └─── Day of week (0-7, Sunday = 0 or 7)
+│ │ │ └───── Month (1-12)
+│ │ └─────── Day of month (1-31)
+│ └───────── Hour (0-23)
+└─────────── Minute (0-59)
+```
+
+**Common Patterns:**
+
+```yaml
+# Every day at midnight
+cron: "0 0 * * *"
+
+# Every weekday at 9 AM
+cron: "0 9 * * 1-5"
+
+# Every hour
+cron: "0 * * * *"
+
+# Every 15 minutes
+cron: "*/15 * * * *"
+
+# First day of month at noon
+cron: "0 12 1 * *"
+
+# Every Sunday at 3 AM
+cron: "0 3 * * 0"
+```
+
+### Example: Daily Report
+
+```yaml
+nodes:
+  - id: schedule
+    type: cron
+    trigger: cron
+    properties:
+      cron: "0 8 * * 1-5"  # Weekdays at 8 AM
+      
+  - id: generate_report
+    type: postgresql
+    action: execute_query
+    properties:
+      query: |
+        SELECT * FROM daily_metrics
+        WHERE date = CURRENT_DATE - INTERVAL '1 day'
+        
+  - id: send_email
+    type: resend
+    action: send_email
+    properties:
+      from: "reports@company.com"
+      to: "team@company.com"
+      subject: "Daily Report - {{now() | date}}"
+      html: "{{generate_report.output | render_table}}"
+```
+
+## Transform
+
+Transform and manipulate data within workflows.
+
+### Field Path Operations
+
+Extract and transform nested data:
+
+```yaml
+action: transform
+properties:
+  input: "{{source_data}}"
+  operations:
+    - type: "extract"
+      path: "user.profile.email"
+    - type: "uppercase"
+    - type: "trim"
+```
+
+### Data Mapping
+
+Map data between different formats:
+
+```yaml
+action: transform
+properties:
+  input: "{{api_response}}"
+  mapping:
+    id: "user.id"
+    name: "user.fullName"
+    email: "user.contactInfo.email"
+    created: "user.metadata.createdAt"
+```
+
+### Example: API Response Transformation
+
+```yaml
+nodes:
+  - id: fetch_users
+    type: http
+    action: get
+    properties:
+      url: "https://api.example.com/users"
+      
+  - id: transform
+    type: transform
+    input: "{{fetch_users.body.data}}"
+    operations:
+      - type: "map"
+        fields:
+          user_id: "id"
+          full_name: "first_name + ' ' + last_name"
+          email_normalized: "email | lowercase | trim"
+      - type: "filter"
+        condition: "status == 'active'"
+```
+
+## Manipulation
+
+Data manipulation utilities for common operations.
+
+### Operations
+
+```yaml
+action: manipulate
+properties:
+  input: "{{data}}"
+  operation: "merge"
+  params:
+    source: "{{additional_data}}"
+```
+
+**Available Operations:**
+- `merge`: Combine objects
+- `filter`: Filter arrays
+- `map`: Transform arrays
+- `reduce`: Aggregate data
+- `sort`: Sort collections
+- `group`: Group by key
+
+## Condition
+
+Conditional logic for workflow branching.
+
+### Simple Condition
+
+```yaml
+action: condition
+properties:
+  condition: "{{user.age >= 18}}"
+  if_true: "{{branch_adult}}"
+  if_false: "{{branch_minor}}"
+```
+
+### Multiple Conditions
+
+```yaml
+action: condition
+properties:
+  conditions:
+    - condition: "{{order.total > 1000}}"
+      output: "high_value"
+    - condition: "{{order.total > 100}}"
+      output: "medium_value"
+    - condition: "true"
+      output: "low_value"
+```
+
+### Example: Order Processing
+
+```yaml
+nodes:
+  - id: webhook
+    type: webhook
+    
+  - id: check_amount
+    type: condition
+    properties:
+      condition: "{{webhook.body.amount > 1000}}"
+      
+  - id: high_value_process
+    type: http
+    condition: "{{check_amount.result == true}}"
+    action: post
+    properties:
+      url: "https://api.example.com/high-value-orders"
+      
+  - id: standard_process
+    type: http
+    condition: "{{check_amount.result == false}}"
+    action: post
+    properties:
+      url: "https://api.example.com/standard-orders"
+```
+
+## JWT (JSON Web Tokens)
+
+Generate and verify JSON Web Tokens.
+
+### Generate Token
+
+```yaml
+action: generate
+properties:
+  secret: "{{env.JWT_SECRET}}"
+  payload:
+    user_id: "{{user.id}}"
+    email: "{{user.email}}"
+    role: "{{user.role}}"
+  expires_in: "7d"  # 7 days
+  algorithm: "HS256"
+```
+
+### Verify Token
+
+```yaml
+action: verify
+properties:
+  secret: "{{env.JWT_SECRET}}"
+  token: "{{request.headers.authorization}}"
+  algorithm: "HS256"
+```
+
+### Example: Authentication Flow
+
+```yaml
+nodes:
+  - id: login_webhook
+    type: webhook
+    
+  - id: verify_credentials
+    type: postgresql
+    action: execute_query
+    properties:
+      query: |
+        SELECT id, email, role
+        FROM users
+        WHERE email = $1 AND password_hash = crypt($2, password_hash)
+      parameters:
+        - "{{login_webhook.body.email}}"
+        - "{{login_webhook.body.password}}"
+        
+  - id: generate_token
+    type: jwt
+    action: generate
+    properties:
+      secret: "{{env.JWT_SECRET}}"
+      payload:
+        user_id: "{{verify_credentials.output[0].id}}"
+        email: "{{verify_credentials.output[0].email}}"
+        role: "{{verify_credentials.output[0].role}}"
+      expires_in: "7d"
+      
+  - id: send_response
+    type: send_response
+    properties:
+      status: 200
+      body:
+        token: "{{generate_token.token}}"
+        user:
+          id: "{{verify_credentials.output[0].id}}"
+          email: "{{verify_credentials.output[0].email}}"
+```
+
+## Base64
+
+Encode and decode Base64 data.
+
+### Encode
+
+```yaml
+action: encode
+properties:
+  input: "Hello, World!"
+```
+
+### Decode
+
+```yaml
+action: decode
+properties:
+  input: "SGVsbG8sIFdvcmxkIQ=="
+```
+
+### Example: File Upload
+
+```yaml
+nodes:
+  - id: webhook
+    type: webhook
+    
+  - id: decode_file
+    type: base64
+    action: decode
+    properties:
+      input: "{{webhook.body.file_data}}"
+      
+  - id: upload
+    type: s3
+    action: upload_object
+    properties:
+      bucket: "uploads"
+      key: "{{webhook.body.filename}}"
+      content: "{{decode_file.output}}"
+```
+
+## Storage
+
+Internal storage operations for workflow state.
+
+### Store Value
+
+```yaml
+action: set
+properties:
+  key: "workflow:{{workflow_id}}:state"
+  value: "{{current_state}}"
+  ttl: 3600
+```
+
+### Retrieve Value
+
+```yaml
+action: get
+properties:
+  key: "workflow:{{workflow_id}}:state"
+```
+
+## Split Array
+
+Split arrays into smaller chunks for parallel processing.
+
+```yaml
+action: split
+properties:
+  input: "{{large_array}}"
+  chunk_size: 100
+```
+
+## Items to Item
+
+Convert array items to individual workflow items.
+
+```yaml
+action: items_to_item
+properties:
+  items: "{{array_data}}"
+```
+
+This creates multiple workflow branches, one for each item.
+
+## Raw File to Item
+
+Parse various file formats into structured data.
+
+### Supported Formats
+
+- CSV
+- JSON
+- NDJSON (Newline-delimited JSON)
+- XML
+- YAML
+- TSV
+- XLSX (Excel)
+
+### Parse CSV
+
+```yaml
+action: parse
+properties:
+  file: "{{file_data}}"
+  format: "csv"
+  options:
+    delimiter: ","
+    has_header: true
+```
+
+### Parse JSON
+
+```yaml
+action: parse
+properties:
+  file: "{{file_data}}"
+  format: "json"
+```
+
+### Parse XLSX
+
+```yaml
+action: parse
+properties:
+  file: "{{file_data}}"
+  format: "xlsx"
+  options:
+    sheet: "Sheet1"
+    has_header: true
+```
+
+### Example: CSV Import Pipeline
+
+```yaml
+nodes:
+  - id: download_file
+    type: s3
+    action: download_object
+    properties:
+      bucket: "imports"
+      key: "data.csv"
+      
+  - id: parse_csv
+    type: rawfiletoitem
+    action: parse
+    properties:
+      file: "{{download_file.content}}"
+      format: "csv"
+      options:
+        has_header: true
+        
+  - id: process_rows
+    type: items_to_item
+    properties:
+      items: "{{parse_csv.output}}"
+      
+  - id: insert_row
+    type: postgresql
+    action: execute_query
+    properties:
+      query: |
+        INSERT INTO imported_data (name, email, phone)
+        VALUES ($1, $2, $3)
+      parameters:
+        - "{{process_rows.current.name}}"
+        - "{{process_rows.current.email}}"
+        - "{{process_rows.current.phone}}"
+```
+
+## On Error
+
+Error handling and recovery.
+
+```yaml
+trigger: on_error
+config:
+  parent_node: "risky_operation"
+  error_types:
+    - "network_error"
+    - "timeout"
+```
+
+## Send Response
+
+Send HTTP responses from webhook workflows.
+
+```yaml
+action: send_response
+properties:
+  status: 200
+  headers:
+    Content-Type: "application/json"
+  body:
+    success: true
+    message: "Workflow completed"
+    data: "{{result}}"
+```
+
+## Best Practices
+
+1. **Scheduling**: Use UTC times for cron expressions
+2. **Transformations**: Keep transformations simple and testable
+3. **Conditions**: Document complex conditional logic
+4. **Error Handling**: Always implement error handlers for critical paths
+5. **Data Parsing**: Validate file formats before parsing
+6. **Tokens**: Never log JWT secrets or tokens
+7. **Storage**: Set appropriate TTLs for temporary data
+8. **Array Processing**: Use chunking for large arrays
+
+## Next Steps
+
+- [Workflow Concepts](/concepts/workflows)
+- [Node Types](/concepts/nodes)
+- [Integration Overview](/integrations/overview)

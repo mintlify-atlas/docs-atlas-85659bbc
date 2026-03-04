@@ -1,122 +1,148 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Flowbaker",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#f2b827",
+    "light": "#7e5219",
+    "dark": "#ad811c"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/33547bd5-73a4-4aa8-9221-6ae2e2bc59bd.jpg",
+  "logo": {
+    "light": "https://media.brand.dev/ffa154c2-1109-40f8-ac27-c47d3568106c.svg",
+    "dark": "https://media.brand.dev/bbf88d90-3c56-47e6-805e-80a6f2c52168.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/flowbaker/flowbaker"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/flowbaker/flowbaker"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/workflows",
+              "concepts/nodes",
+              "concepts/integrations",
+              "concepts/executors"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Deployment",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "deployment/docker",
+              "deployment/binary",
+              "deployment/configuration",
+              "deployment/environment-variables"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Integrations",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "integrations/overview",
+              "integrations/ai-agents",
+              "integrations/communication",
+              "integrations/development",
+              "integrations/storage",
+              "integrations/utilities"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/monitoring",
+              "operations/security",
+              "operations/troubleshooting"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "AI SDK",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "ai-sdk/introduction",
+              "ai-sdk/getting-started"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Core Components",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "ai-sdk/agent",
+              "ai-sdk/providers",
+              "ai-sdk/memory",
+              "ai-sdk/tools"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "ai-sdk/examples/basic-agent",
+              "ai-sdk/examples/custom-tools",
+              "ai-sdk/examples/memory-storage"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/start",
+              "cli/status",
+              "cli/reset",
+              "cli/workspaces"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Domain Types",
+            "pages": [
+              "api/workflow",
+              "api/node",
+              "api/integration",
+              "api/executor"
+            ]
+          },
+          {
+            "group": "AI SDK API",
+            "pages": [
+              "api/ai-sdk/agent-api",
+              "api/ai-sdk/provider-api",
+              "api/ai-sdk/memory-api",
+              "api/ai-sdk/tool-api"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

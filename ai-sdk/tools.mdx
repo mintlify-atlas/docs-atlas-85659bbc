@@ -1,0 +1,543 @@
+---
+title: Tools
+description: Function calling and tool execution for AI agents
+---
+
+Tools enable agents to interact with external systems, APIs, and data sources through function calling.
+
+## Tool Interface
+
+From `pkg/ai-sdk/tool/tool.go:9-14`:
+
+```go
+type Tool interface {
+    Name() string
+    Description() string
+    Parameters() map[string]any
+    Execute(ctx context.Context, args string) (string, error)
+}
+```
+
+All tools must implement these four methods.
+
+## Creating Tools
+
+### Using tool.Define
+
+From `pkg/ai-sdk/tool/tool.go:51-58`:
+
+```go
+func Define(name, description string, parameters map[string]any, fn func(string) (string, error)) Tool
+```
+
+Quickest way to create a tool:
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/tool"
+
+weatherTool := tool.Define(
+    "get_weather",
+    "Get the current weather for a location",
+    map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "location": map[string]any{
+                "type":        "string",
+                "description": "City name or coordinates",
+            },
+            "units": map[string]any{
+                "type":        "string",
+                "enum":        []string{"celsius", "fahrenheit"},
+                "description": "Temperature units",
+            },
+        },
+        "required": []string{"location"},
+    },
+    func(args string) (string, error) {
+        // Parse arguments
+        var params struct {
+            Location string `json:"location"`
+            Units    string `json:"units"`
+        }
+        if err := json.Unmarshal([]byte(args), &params); err != nil {
+            return "", err
+        }
+        
+        // Call weather API
+        weather := getWeather(params.Location, params.Units)
+        return fmt.Sprintf("Temperature: %d°", weather.Temp), nil
+    },
+)
+```
+
+### Implementing Tool Interface
+
+For more control, implement the interface:
+
+```go
+type CalculatorTool struct{}
+
+func (t *CalculatorTool) Name() string {
+    return "calculator"
+}
+
+func (t *CalculatorTool) Description() string {
+    return "Perform mathematical calculations"
+}
+
+func (t *CalculatorTool) Parameters() map[string]any {
+    return map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "expression": map[string]any{
+                "type":        "string",
+                "description": "Mathematical expression to evaluate",
+            },
+        },
+        "required": []string{"expression"},
+    }
+}
+
+func (t *CalculatorTool) Execute(ctx context.Context, args string) (string, error) {
+    var params struct {
+        Expression string `json:"expression"`
+    }
+    
+    if err := json.Unmarshal([]byte(args), &params); err != nil {
+        return "", fmt.Errorf("invalid arguments: %w", err)
+    }
+    
+    result := evaluateExpression(params.Expression)
+    return fmt.Sprintf("Result: %v", result), nil
+}
+```
+
+## Parameters Schema
+
+Tools use JSON Schema for parameter validation:
+
+```go
+parameters := map[string]any{
+    "type": "object",
+    "properties": map[string]any{
+        "param_name": map[string]any{
+            "type":        "string",      // string, number, boolean, array, object
+            "description": "What this parameter does",
+            "enum":        []string{"option1", "option2"}, // Optional: restrict values
+        },
+    },
+    "required": []string{"param_name"}, // Required parameters
+}
+```
+
+### Common Parameter Types
+
+#### String Parameter
+```go
+"location": map[string]any{
+    "type":        "string",
+    "description": "City name",
+}
+```
+
+#### Number Parameter
+```go
+"temperature": map[string]any{
+    "type":        "number",
+    "description": "Temperature in celsius",
+}
+```
+
+#### Boolean Parameter
+```go
+"include_forecast": map[string]any{
+    "type":        "boolean",
+    "description": "Include 7-day forecast",
+}
+```
+
+#### Array Parameter
+```go
+"tags": map[string]any{
+    "type":        "array",
+    "description": "List of tags",
+    "items": map[string]any{
+        "type": "string",
+    },
+}
+```
+
+#### Object Parameter
+```go
+"address": map[string]any{
+    "type":        "object",
+    "description": "Address information",
+    "properties": map[string]any{
+        "street": map[string]any{"type": "string"},
+        "city":   map[string]any{"type": "string"},
+    },
+}
+```
+
+#### Enum Parameter
+```go
+"status": map[string]any{
+    "type":        "string",
+    "enum":        []string{"pending", "approved", "rejected"},
+    "description": "Status value",
+}
+```
+
+## Using Tools with Agent
+
+From `pkg/ai-sdk/agent/options.go:43-58`:
+
+```go
+ag, err := agent.New(
+    agent.WithModel(model),
+    agent.WithTools(weatherTool, calculatorTool),
+)
+```
+
+The agent will:
+1. Send tool definitions to the LLM
+2. Receive tool calls from the LLM
+3. Execute the tools
+4. Send results back to the LLM
+
+## Tool Execution Flow
+
+From `pkg/ai-sdk/agent/agent.go:464-492`:
+
+1. **LLM requests tool call**: Returns tool name and arguments
+2. **Agent emits ToolCallStartEvent**: Tool execution begins
+3. **Agent finds tool**: Looks up tool by name
+4. **Agent executes tool**: Calls `Execute()` with arguments
+5. **Agent creates ToolResult**: Captures output or error
+6. **Agent emits ToolExecutionCompleteEvent**: Tool execution done
+7. **Agent sends result to LLM**: Continues conversation
+
+## UserInputTool Interface
+
+From `pkg/ai-sdk/tool/tool.go:16-19`:
+
+```go
+type UserInputTool interface {
+    Tool
+    SendInputEvent(ctx context.Context, toolCall types.ToolCall) error
+}
+```
+
+For tools that require human intervention:
+
+```go
+type ApprovalTool struct{}
+
+func (t *ApprovalTool) Name() string {
+    return "request_approval"
+}
+
+func (t *ApprovalTool) Description() string {
+    return "Request human approval for an action"
+}
+
+func (t *ApprovalTool) Parameters() map[string]any {
+    return map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "action": map[string]any{
+                "type":        "string",
+                "description": "Action requiring approval",
+            },
+        },
+        "required": []string{"action"},
+    }
+}
+
+func (t *ApprovalTool) Execute(ctx context.Context, args string) (string, error) {
+    // This won't be called - SendInputEvent is used instead
+    return "", nil
+}
+
+func (t *ApprovalTool) SendInputEvent(ctx context.Context, toolCall types.ToolCall) error {
+    // Send event to UI or notification system
+    action := toolCall.Arguments["action"].(string)
+    return notifyUser("Approval needed:", action)
+}
+```
+
+When a `UserInputTool` is called:
+- Agent sets `FinishReason` to `"human_intervention"`
+- Conversation status becomes `"interrupted"`
+- Agent stops and waits for tool results
+
+Resume with results:
+
+```go
+stream, _ := ag.Chat(ctx, agent.ChatRequest{
+    SessionID: "user-123",
+    ToolResults: []types.ToolResult{{
+        ToolCallID: "call_123",
+        Content:    "approved",
+        IsError:    false,
+    }},
+})
+```
+
+## EventEmittingTool Interface
+
+From `pkg/ai-sdk/tool/tool.go:21-26`:
+
+```go
+type EventEmittingTool interface {
+    Tool
+    SetEventEmitter(emitter func(types.StreamEvent))
+}
+```
+
+Emit custom events during tool execution:
+
+```go
+type SearchTool struct {
+    emitter func(types.StreamEvent)
+}
+
+func (t *SearchTool) SetEventEmitter(emitter func(types.StreamEvent)) {
+    t.emitter = emitter
+}
+
+func (t *SearchTool) Execute(ctx context.Context, args string) (string, error) {
+    var params struct {
+        Query string `json:"query"`
+    }
+    json.Unmarshal([]byte(args), &params)
+    
+    // Emit progress event
+    if t.emitter != nil {
+        t.emitter(types.NewTextDeltaEvent("Searching...", 0))
+    }
+    
+    results := search(params.Query)
+    
+    // Emit completion event
+    if t.emitter != nil {
+        t.emitter(types.NewTextDeltaEvent("Done!", 0))
+    }
+    
+    return formatResults(results), nil
+}
+```
+
+The agent automatically sets up the emitter from `pkg/ai-sdk/agent/agent.go:78-83`.
+
+## ToolCall Type
+
+From `pkg/ai-sdk/types/message.go:28-33`:
+
+```go
+type ToolCall struct {
+    ID        string
+    Name      string
+    Arguments map[string]any
+    Metadata  map[string]any
+}
+```
+
+Received from the LLM:
+
+```go
+toolCall := types.ToolCall{
+    ID:   "call_abc123",
+    Name: "get_weather",
+    Arguments: map[string]any{
+        "location": "New York",
+        "units":    "celsius",
+    },
+}
+```
+
+## ToolResult Type
+
+From `pkg/ai-sdk/types/message.go:36-40`:
+
+```go
+type ToolResult struct {
+    ToolCallID string
+    Content    string
+    IsError    bool
+}
+```
+
+Sent back to the LLM:
+
+```go
+toolResult := types.ToolResult{
+    ToolCallID: "call_abc123",
+    Content:    "Temperature: 72°F, Sunny",
+    IsError:    false,
+}
+```
+
+If tool execution fails:
+
+```go
+toolResult := types.ToolResult{
+    ToolCallID: "call_abc123",
+    Content:    "Error: Invalid location",
+    IsError:    true,
+}
+```
+
+## Error Handling
+
+Handle errors gracefully in tools:
+
+```go
+func (t *WeatherTool) Execute(ctx context.Context, args string) (string, error) {
+    var params struct {
+        Location string `json:"location"`
+    }
+    
+    if err := json.Unmarshal([]byte(args), &params); err != nil {
+        return "", fmt.Errorf("invalid arguments: %w", err)
+    }
+    
+    if params.Location == "" {
+        return "", fmt.Errorf("location is required")
+    }
+    
+    weather, err := fetchWeather(params.Location)
+    if err != nil {
+        // Return error to LLM so it can handle it
+        return fmt.Sprintf("Unable to fetch weather: %v", err), nil
+    }
+    
+    return formatWeather(weather), nil
+}
+```
+
+From `pkg/ai-sdk/agent/agent.go:479-487`, errors are captured in `ToolResult`:
+
+```go
+if err != nil {
+    toolResult.Content = fmt.Sprintf("Error: %v", err)
+    toolResult.IsError = true
+}
+```
+
+## Built-in Tools
+
+The SDK includes some built-in tools in `pkg/ai-sdk/tool/`:
+
+- **planning.go**: Planning and task management tools
+- **user_input.go**: User input request tools
+
+Check the source for implementation details.
+
+## Tool Best Practices
+
+1. **Clear descriptions**: LLM uses description to decide when to call the tool
+2. **Specific parameters**: Define precise parameter schemas with descriptions
+3. **Error handling**: Return helpful error messages
+4. **Structured output**: Return consistent, parseable output
+5. **Performance**: Keep tool execution fast
+6. **Idempotency**: Tools should be safe to retry
+7. **Validation**: Validate all inputs
+8. **Logging**: Log tool executions for debugging
+9. **Context timeout**: Respect context cancellation
+10. **Streaming**: Use EventEmittingTool for long operations
+
+## Example: Database Tool
+
+```go
+type DatabaseTool struct {
+    db *sql.DB
+}
+
+func (t *DatabaseTool) Name() string {
+    return "query_database"
+}
+
+func (t *DatabaseTool) Description() string {
+    return "Query the database for information. Returns results as JSON."
+}
+
+func (t *DatabaseTool) Parameters() map[string]any {
+    return map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "query": map[string]any{
+                "type":        "string",
+                "description": "SQL query to execute (SELECT only)",
+            },
+        },
+        "required": []string{"query"},
+    }
+}
+
+func (t *DatabaseTool) Execute(ctx context.Context, args string) (string, error) {
+    var params struct {
+        Query string `json:"query"`
+    }
+    
+    if err := json.Unmarshal([]byte(args), &params); err != nil {
+        return "", fmt.Errorf("invalid arguments: %w", err)
+    }
+    
+    // Validate query is SELECT only
+    if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(params.Query)), "SELECT") {
+        return "", fmt.Errorf("only SELECT queries are allowed")
+    }
+    
+    // Execute query with timeout
+    ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+    defer cancel()
+    
+    rows, err := t.db.QueryContext(ctx, params.Query)
+    if err != nil {
+        return "", fmt.Errorf("query failed: %w", err)
+    }
+    defer rows.Close()
+    
+    // Convert to JSON
+    results := []map[string]any{}
+    cols, _ := rows.Columns()
+    
+    for rows.Next() {
+        row := make(map[string]any)
+        vals := make([]any, len(cols))
+        valPtrs := make([]any, len(cols))
+        for i := range vals {
+            valPtrs[i] = &vals[i]
+        }
+        
+        if err := rows.Scan(valPtrs...); err != nil {
+            return "", err
+        }
+        
+        for i, col := range cols {
+            row[col] = vals[i]
+        }
+        results = append(results, row)
+    }
+    
+    jsonData, _ := json.Marshal(results)
+    return string(jsonData), nil
+}
+```
+
+Use with agent:
+
+```go
+dbTool := &DatabaseTool{db: database}
+
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithTools(dbTool),
+)
+
+result, _ := ag.ChatSync(ctx, agent.ChatRequest{
+    Prompt:    "How many users signed up this month?",
+    SessionID: "admin-session",
+})
+```

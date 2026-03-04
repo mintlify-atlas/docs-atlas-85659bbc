@@ -1,0 +1,105 @@
+---
+title: AI SDK Introduction
+description: Build AI agents and workflows with the Flowbaker AI SDK
+---
+
+The Flowbaker AI SDK is a powerful Go library for building AI agents with streaming support, tool calling, and persistent memory. It provides a unified interface across multiple LLM providers while handling the complexity of conversation management and tool execution.
+
+## Key Features
+
+### Multi-Provider Support
+Work with OpenAI, Anthropic Claude, and Google Gemini through a single unified interface. Switch between providers without changing your code.
+
+### Intelligent Agents
+Build agents that can:
+- Execute multiple reasoning steps
+- Call tools and functions
+- Maintain conversation history
+- Stream responses in real-time
+
+### Tool System
+Create custom tools that agents can use to interact with external systems, APIs, and data sources. Tools support streaming events and user input interruptions.
+
+### Persistent Memory
+Store and retrieve conversation history across sessions using MongoDB or custom storage backends.
+
+### Streaming Support
+Full streaming support for real-time responses with token-by-token delivery, tool call events, and usage tracking.
+
+## When to Use the AI SDK
+
+The Flowbaker AI SDK is ideal for:
+
+- **Workflow Automation**: Build agents that execute multi-step workflows with tool calls
+- **Conversational AI**: Create chatbots and assistants with persistent memory
+- **Agent Systems**: Implement complex reasoning agents with access to external tools
+- **API Integration**: Connect LLMs to your existing services and databases
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                    Agent                        │
+│  - Manages conversation flow                   │
+│  - Executes reasoning loops                    │
+│  - Handles tool calls                          │
+└───────┬─────────────────────────┬───────────────┘
+        │                         │
+        ▼                         ▼
+┌───────────────┐        ┌────────────────┐
+│   Provider    │        │     Memory     │
+│  - OpenAI     │        │  - MongoDB     │
+│  - Anthropic  │        │  - Custom      │
+│  - Gemini     │        └────────────────┘
+└───────────────┘
+        │
+        ▼
+┌───────────────┐
+│     Tools     │
+│  - Custom     │
+│  - Built-in   │
+└───────────────┘
+```
+
+## Core Concepts
+
+### Agent
+The central component that manages the conversation flow, executes reasoning steps, and coordinates tool calls. See [Agent Documentation](/ai-sdk/agent) for details.
+
+### Provider
+Abstraction layer over LLM APIs. Each provider implements the `LanguageModel` interface for generating and streaming responses. See [Providers](/ai-sdk/providers).
+
+### Memory
+Persistent storage for conversation history. The `Store` interface allows custom implementations. See [Memory](/ai-sdk/memory).
+
+### Tools
+Functions that agents can call to perform actions. Tools are defined with a name, description, parameters schema, and execution function. See [Tools](/ai-sdk/tools).
+
+## Quick Start
+
+Get started with the AI SDK:
+
+```go
+import (
+    "context"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+)
+
+// Create a provider
+model := openai.New(apiKey, "gpt-4o")
+
+// Create an agent
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithSystemPrompt("You are a helpful assistant."),
+)
+
+// Chat with the agent
+result, _ := ag.ChatSync(context.Background(), agent.ChatRequest{
+    Prompt:    "Hello, how are you?",
+    SessionID: "user-123",
+})
+```
+
+Continue to [Getting Started](/ai-sdk/getting-started) for a complete example.

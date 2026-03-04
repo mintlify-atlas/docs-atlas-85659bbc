@@ -1,0 +1,363 @@
+---
+title: Memory
+description: Persistent storage for conversation history
+---
+
+Memory stores enable agents to persist and retrieve conversation history across sessions.
+
+## Store Interface
+
+From `pkg/ai-sdk/memory/memory.go:9-12`:
+
+```go
+type Store interface {
+    GetConversation(ctx context.Context, filter Filter) (types.Conversation, error)
+    SaveConversation(ctx context.Context, conversation types.Conversation) error
+}
+```
+
+Implement this interface to create custom memory backends.
+
+## Filter
+
+From `pkg/ai-sdk/memory/memory.go:14-19`:
+
+```go
+type Filter struct {
+    SessionID string // Filter by session ID
+    UserID    string // Filter by user ID
+    Limit     int    // Number of messages to return (0 = all)
+    Before    *int   // Cursor-based pagination
+}
+```
+
+Used to query conversations:
+
+```go
+conv, err := memoryStore.GetConversation(ctx, memory.Filter{
+    SessionID: "user-123",
+    Limit:     50, // Last 50 messages
+})
+```
+
+## Conversation Type
+
+From `pkg/ai-sdk/types/message.go:43-52`:
+
+```go
+type Conversation struct {
+    ID        string
+    SessionID string
+    UserID    string
+    Messages  []Message
+    CreatedAt time.Time
+    UpdatedAt time.Time
+    Status    ConversationStatus
+    Metadata  map[string]interface{}
+}
+```
+
+### Conversation Status
+
+From `pkg/ai-sdk/types/message.go:71-78`:
+
+```go
+type ConversationStatus string
+
+const (
+    StatusActive      ConversationStatus = "active"
+    StatusCompleted   ConversationStatus = "completed"
+    StatusFailed      ConversationStatus = "failed"
+    StatusInterrupted ConversationStatus = "interrupted"
+)
+```
+
+Conversations track their state:
+
+```go
+if conv.IsInterrupted() {
+    // Resume with tool results
+}
+
+if conv.IsCompleted() {
+    // Start new conversation
+}
+```
+
+## MongoDB Implementation
+
+From `pkg/ai-sdk/memory/mongodb/mongodb.go`:
+
+### Creating MongoDB Store
+
+```go
+import (
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/memory/mongodb"
+    "go.mongodb.org/mongo-driver/mongo"
+)
+
+// Create MongoDB client
+client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+if err != nil {
+    log.Fatal(err)
+}
+
+database := client.Database("flowbaker")
+
+// Create memory store
+memoryStore := mongodb.New(database)
+```
+
+### Using with Agent
+
+```go
+ag, err := agent.New(
+    agent.WithModel(model),
+    agent.WithMemory(memoryStore),
+    agent.WithConversationHistoryLimit(50),
+)
+```
+
+### Storage Schema
+
+From `pkg/ai-sdk/memory/mongodb/mongodb.go:18`:
+
+Conversations are stored in the `ai_chat_conversations` collection with these indexes:
+
+```javascript
+// Compound indexes
+{ session_id: 1, created_at: -1 }
+{ user_id: 1, created_at: -1 }
+
+// Unique index
+{ id: 1 }
+
+// Single indexes
+{ status: 1 }
+{ created_at: -1 }
+```
+
+### SaveConversation
+
+From `pkg/ai-sdk/memory/mongodb/mongodb.go:82-117`:
+
+```go
+func (s *Store) SaveConversation(ctx context.Context, conversation types.Conversation) error
+```
+
+Upserts conversation by ID:
+
+```go
+err := memoryStore.SaveConversation(ctx, types.Conversation{
+    ID:        "conv-123",
+    SessionID: "user-123",
+    UserID:    "user-456",
+    Messages:  messages,
+    Status:    types.StatusActive,
+    Metadata:  map[string]any{"source": "web"},
+})
+```
+
+### GetConversation
+
+From `pkg/ai-sdk/memory/mongodb/mongodb.go:119-163`:
+
+```go
+func (s *Store) GetConversation(ctx context.Context, filter memory.Filter) (types.Conversation, error)
+```
+
+Retrieves or creates conversation:
+
+```go
+conv, err := memoryStore.GetConversation(ctx, memory.Filter{
+    SessionID: "user-123",
+    Limit:     50,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Conversation has %d messages\n", len(conv.Messages))
+```
+
+If no conversation exists, creates a new one automatically.
+
+## NoOp Memory Store
+
+From `pkg/ai-sdk/memory/memory.go:21-30`:
+
+```go
+type NoOpMemoryStore struct{}
+```
+
+Default memory store that doesn't persist anything:
+
+```go
+// Agent uses NoOpMemoryStore by default
+ag, _ := agent.New(
+    agent.WithModel(model),
+    // No memory specified = NoOpMemoryStore
+)
+```
+
+Useful for:
+- Development and testing
+- Stateless agents
+- Single-turn conversations
+
+## Message Type
+
+From `pkg/ai-sdk/types/message.go:6-15`:
+
+```go
+type Message struct {
+    ConversationID string
+    Role           MessageRole // "user", "assistant", "system", "tool"
+    Content        string
+    ToolCalls      []ToolCall
+    ToolResults    []ToolResult
+    Timestamp      time.Time
+    Metadata       map[string]interface{}
+    CreatedAt      time.Time
+}
+```
+
+Messages form the conversation history:
+
+```go
+messages := []types.Message{
+    {
+        Role:    types.RoleUser,
+        Content: "What's the weather?",
+    },
+    {
+        Role:      types.RoleAssistant,
+        Content:   "I'll check that for you.",
+        ToolCalls: []types.ToolCall{...},
+    },
+    {
+        Role:        types.RoleTool,
+        ToolResults: []types.ToolResult{...},
+    },
+}
+```
+
+## Custom Memory Implementation
+
+Implement the `Store` interface for custom backends:
+
+```go
+type RedisMemoryStore struct {
+    client *redis.Client
+}
+
+func (s *RedisMemoryStore) GetConversation(
+    ctx context.Context,
+    filter memory.Filter,
+) (types.Conversation, error) {
+    // Retrieve from Redis
+    key := fmt.Sprintf("conversation:%s", filter.SessionID)
+    data, err := s.client.Get(ctx, key).Bytes()
+    if err != nil {
+        // Create new conversation if not found
+        return types.Conversation{
+            ID:        uuid.New().String(),
+            SessionID: filter.SessionID,
+            Messages:  []types.Message{},
+            Status:    types.StatusActive,
+        }, nil
+    }
+    
+    var conv types.Conversation
+    json.Unmarshal(data, &conv)
+    
+    // Apply limit if specified
+    if filter.Limit > 0 && len(conv.Messages) > filter.Limit {
+        conv.Messages = conv.Messages[len(conv.Messages)-filter.Limit:]
+    }
+    
+    return conv, nil
+}
+
+func (s *RedisMemoryStore) SaveConversation(
+    ctx context.Context,
+    conversation types.Conversation,
+) error {
+    // Save to Redis
+    key := fmt.Sprintf("conversation:%s", conversation.SessionID)
+    data, _ := json.Marshal(conversation)
+    return s.client.Set(ctx, key, data, 24*time.Hour).Err()
+}
+```
+
+Use custom store:
+
+```go
+redisStore := &RedisMemoryStore{client: redisClient}
+
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithMemory(redisStore),
+)
+```
+
+## Memory Hooks
+
+From `pkg/ai-sdk/agent/agent.go:51-56`:
+
+Monitor memory operations with hooks:
+
+```go
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithMemory(memoryStore),
+    agent.WithHooks(agent.Hooks{
+        OnBeforeMemoryRetrieve: func(ctx context.Context, filter memory.Filter) {
+            log.Printf("Retrieving conversation for session: %s", filter.SessionID)
+        },
+        OnMemoryRetrieved: func(ctx context.Context, filter memory.Filter, conv types.Conversation) {
+            log.Printf("Retrieved %d messages", len(conv.Messages))
+        },
+        OnBeforeMemorySave: func(ctx context.Context, conv types.Conversation) {
+            log.Printf("Saving conversation: %s", conv.ID)
+        },
+        OnMemorySaved: func(ctx context.Context, conv types.Conversation) {
+            log.Printf("Saved successfully")
+        },
+    }),
+)
+```
+
+## Conversation History Limit
+
+From `pkg/ai-sdk/agent/options.go:61-65`:
+
+Limit messages retrieved from memory:
+
+```go
+ag, _ := agent.New(
+    agent.WithModel(model),
+    agent.WithMemory(memoryStore),
+    agent.WithConversationHistoryLimit(50), // Last 50 messages only
+)
+```
+
+This prevents:
+- Exceeding model context windows
+- High token costs
+- Slow API calls
+
+Set to `0` for unlimited (all messages).
+
+## Best Practices
+
+1. **Use SessionID consistently** for conversation continuity
+2. **Set conversation history limits** to manage context window
+3. **Index your database** properly for performance
+4. **Handle conversation status** (active, interrupted, completed)
+5. **Store metadata** for tracking and analytics
+6. **Implement pagination** for large conversations
+7. **Clean up old conversations** periodically
+8. **Use memory hooks** for logging and monitoring
+9. **Consider TTL** for temporary conversations
+10. **Validate conversation ID** before saving

@@ -1,0 +1,332 @@
+---
+title: Providers
+description: LLM provider implementations for OpenAI, Anthropic, and Gemini
+---
+
+Providers are implementations of the `LanguageModel` interface that connect to different LLM APIs.
+
+## LanguageModel Interface
+
+From `pkg/ai-sdk/provider/provider.go:11-27`:
+
+```go
+type LanguageModel interface {
+    // Generate produces a complete response (blocking)
+    Generate(ctx context.Context, req GenerateRequest) (*types.GenerateResponse, error)
+    
+    // Stream creates a streaming request
+    Stream(ctx context.Context, req GenerateRequest) (*ProviderStream, error)
+    
+    // ID returns the unique identifier for this model
+    ID() string
+    
+    // Capabilities returns the capabilities of this model
+    Capabilities() Capabilities
+    
+    // ProviderName returns provider name
+    ProviderName() string
+}
+```
+
+## GenerateRequest
+
+From `pkg/ai-sdk/provider/provider.go:62-71`:
+
+```go
+type GenerateRequest struct {
+    Messages []types.Message  // Conversation history
+    System   string           // System prompt
+    Tools    []types.Tool     // Tools available to the model
+}
+```
+
+## Capabilities
+
+From `pkg/ai-sdk/provider/provider.go:74-89`:
+
+```go
+type Capabilities struct {
+    SupportsTools     bool // Function/tool calling
+    SupportsStreaming bool // Streaming responses
+    SupportsVision    bool // Image inputs
+    MaxContextTokens  int  // Maximum context window
+    MaxOutputTokens   int  // Maximum output tokens
+}
+```
+
+## OpenAI Provider
+
+From `pkg/ai-sdk/provider/openai/openai.go`:
+
+### Creating an OpenAI Provider
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+
+// Basic setup
+model := openai.New(apiKey, "gpt-4o")
+
+// With custom base URL (for compatible APIs like Groq)
+model := openai.New(apiKey, "mixtral-8x7b-32768",
+    openai.WithBaseURL("https://api.groq.com/openai/v1"),
+)
+```
+
+### Request Settings
+
+From `pkg/ai-sdk/provider/openai/openai.go:33-43`:
+
+```go
+type RequestSettings struct {
+    Model            string
+    Temperature      float32
+    MaxTokens        int
+    TopP             float32
+    FrequencyPenalty float32
+    PresencePenalty  float32
+    Stop             []string
+    ReasoningEffort  string  // For o1/o3 models
+    Verbosity        string  // For o1/o3 models
+}
+```
+
+### Configuration Example
+
+```go
+model := openai.New(apiKey, "gpt-4o")
+
+model.SetRequestSettings(openai.RequestSettings{
+    Model:            "gpt-4o",
+    Temperature:      0.7,
+    MaxTokens:        2000,
+    TopP:             0.9,
+    FrequencyPenalty: 0.5,
+    PresencePenalty:  0.5,
+    Stop:             []string{"\n\n"},
+})
+```
+
+### Supported Models
+
+From `pkg/ai-sdk/provider/openai/openai.go:396-432`:
+
+- **GPT-5**: gpt-5, gpt-5-mini, gpt-5-nano (400K context)
+- **GPT-4o**: gpt-4o, gpt-4o-mini (128K context)
+- **GPT-4**: gpt-4, gpt-4-32k
+- **GPT-3.5**: gpt-3.5-turbo (16K context)
+- **o1/o3**: o1, o1-mini, o3, o3-mini (reasoning models)
+
+### Capabilities
+
+```go
+caps := model.Capabilities()
+// SupportsTools: true
+// SupportsStreaming: true
+// SupportsVision: true (for gpt-4o, gpt-4-turbo)
+// MaxContextTokens: varies by model
+```
+
+## Anthropic Provider
+
+From `pkg/ai-sdk/provider/anthropic/anthropic.go`:
+
+### Creating an Anthropic Provider
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/anthropic"
+
+model := anthropic.New(apiKey, "claude-sonnet-4-20250514")
+```
+
+### Request Settings
+
+From `pkg/ai-sdk/provider/anthropic/anthropic.go:22-29`:
+
+```go
+type RequestSettings struct {
+    Model       string
+    MaxTokens   int64
+    Temperature float64
+    TopP        float64
+    TopK        int64
+    Stop        []string
+}
+```
+
+### Configuration Example
+
+```go
+model := anthropic.New(apiKey, "claude-sonnet-4-20250514")
+
+model.SetRequestSettings(anthropic.RequestSettings{
+    Model:       "claude-sonnet-4-20250514",
+    MaxTokens:   4096,
+    Temperature: 0.7,
+    TopP:        0.9,
+    TopK:        40,
+    Stop:        []string{"Human:"},
+})
+```
+
+### Supported Models
+
+From `pkg/ai-sdk/provider/anthropic/anthropic.go:417-454`:
+
+- **Claude 4.5**: opus-4-5, sonnet-4-5, haiku-4-5 (200K context, up to 32K output)
+- **Claude 4**: opus-4-1, opus-4, sonnet-4 (200K context)
+- **Claude 3.7**: sonnet-3-7 (200K context, 16K output)
+- **Claude 3.5**: haiku-3-5 (200K context, 8K output)
+- **Claude 3**: opus, sonnet, haiku (200K context)
+
+All Claude models support vision.
+
+### Capabilities
+
+```go
+caps := model.Capabilities()
+// SupportsTools: true
+// SupportsStreaming: true
+// SupportsVision: true
+// MaxContextTokens: 200000
+// MaxOutputTokens: varies (4K-32K)
+```
+
+## Gemini Provider
+
+From `pkg/ai-sdk/provider/gemini/gemini.go`:
+
+### Creating a Gemini Provider
+
+```go
+import "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/gemini"
+
+// Gemini requires context for initialization
+model, err := gemini.New(ctx, apiKey, "gemini-2.5-pro")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Request Settings
+
+From `pkg/ai-sdk/provider/gemini/gemini.go:21-28`:
+
+```go
+type RequestSettings struct {
+    Model           string
+    MaxOutputTokens int32
+    Temperature     float32
+    TopP            float32
+    TopK            float32
+    StopSequences   []string
+}
+```
+
+### Configuration Example
+
+```go
+model, _ := gemini.New(ctx, apiKey, "gemini-2.5-pro")
+
+model.SetRequestSettings(gemini.RequestSettings{
+    Model:           "gemini-2.5-pro",
+    MaxOutputTokens: 8192,
+    Temperature:     0.7,
+    TopP:            0.9,
+    TopK:            40,
+    StopSequences:   []string{"END"},
+})
+```
+
+### Supported Models
+
+From `pkg/ai-sdk/provider/gemini/gemini.go:490-526`:
+
+- **Gemini 3**: pro-preview, flash-preview (1M context, 64K output)
+- **Gemini 2.5**: pro, flash, flash-lite (1M context, 64K output)
+- **Gemini 2.0**: flash, flash-lite (1M context, 8K output)
+
+All Gemini models support vision.
+
+### Capabilities
+
+```go
+caps := model.Capabilities()
+// SupportsTools: true
+// SupportsStreaming: true
+// SupportsVision: true
+// MaxContextTokens: 1048576 (1M)
+// MaxOutputTokens: varies (8K-64K)
+```
+
+### Special Features
+
+Gemini 3 models support "thought signatures" for function calling:
+
+```go
+// Gemini automatically includes thought signatures
+// They're preserved in ToolCall.Metadata
+toolCall := types.ToolCall{
+    ID:   "...",
+    Name: "weather",
+    Arguments: map[string]any{"location": "NYC"},
+    Metadata: map[string]any{
+        "thought_signature": []byte{...},
+    },
+}
+```
+
+## ProviderStream
+
+From `pkg/ai-sdk/provider/provider.go:30-59`:
+
+```go
+type ProviderStream struct {
+    Events <-chan types.StreamEvent
+}
+
+func (s *ProviderStream) Err() error
+```
+
+Used for streaming responses:
+
+```go
+stream, err := model.Stream(ctx, provider.GenerateRequest{
+    Messages: messages,
+    System:   "You are helpful.",
+    Tools:    tools,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+for event := range stream.Events {
+    // Process events
+}
+
+if err := stream.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+## Comparison
+
+| Feature | OpenAI | Anthropic | Gemini |
+|---------|--------|-----------|--------|
+| Context Window | 8K-400K | 200K | 1M |
+| Max Output | 4K-128K | 4K-32K | 8K-64K |
+| Vision | Some models | All models | All models |
+| Tool Calling | Yes | Yes | Yes |
+| Streaming | Yes | Yes | Yes |
+| Reasoning Tokens | Yes (o1/o3) | No | No |
+| Cache Support | Yes | Yes | Yes |
+
+## Best Practices
+
+1. **Choose the right model** for your use case (speed vs. capability)
+2. **Set appropriate token limits** to control costs
+3. **Use streaming** for better user experience
+4. **Handle errors** from both provider initialization and API calls
+5. **Monitor token usage** with the Usage field
+6. **Set temperature carefully** (lower = more deterministic, higher = more creative)
+7. **Use stop sequences** to control output format
+8. **Consider context windows** when managing conversation history

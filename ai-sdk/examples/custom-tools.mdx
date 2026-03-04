@@ -1,0 +1,558 @@
+---
+title: Custom Tools Example
+description: Build agents with custom tools for function calling
+---
+
+This example shows how to create custom tools and use them with agents.
+
+## Simple Calculator Tool
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/tool"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/types"
+)
+
+func main() {
+    // Create calculator tool using tool.Define
+    calculatorTool := tool.Define(
+        "calculator",
+        "Perform basic mathematical calculations",
+        map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "operation": map[string]any{
+                    "type":        "string",
+                    "enum":        []string{"add", "subtract", "multiply", "divide"},
+                    "description": "The mathematical operation to perform",
+                },
+                "a": map[string]any{
+                    "type":        "number",
+                    "description": "First number",
+                },
+                "b": map[string]any{
+                    "type":        "number",
+                    "description": "Second number",
+                },
+            },
+            "required": []string{"operation", "a", "b"},
+        },
+        func(args string) (string, error) {
+            var params struct {
+                Operation string  `json:"operation"`
+                A         float64 `json:"a"`
+                B         float64 `json:"b"`
+            }
+
+            if err := json.Unmarshal([]byte(args), &params); err != nil {
+                return "", fmt.Errorf("invalid arguments: %w", err)
+            }
+
+            var result float64
+            switch params.Operation {
+            case "add":
+                result = params.A + params.B
+            case "subtract":
+                result = params.A - params.B
+            case "multiply":
+                result = params.A * params.B
+            case "divide":
+                if params.B == 0 {
+                    return "", fmt.Errorf("division by zero")
+                }
+                result = params.A / params.B
+            default:
+                return "", fmt.Errorf("unknown operation: %s", params.Operation)
+            }
+
+            return fmt.Sprintf("%.2f", result), nil
+        },
+    )
+
+    // Create agent with tool
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful math assistant."),
+        agent.WithTools(calculatorTool),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Ask a math question
+    ctx := context.Background()
+    stream, err := ag.Chat(ctx, agent.ChatRequest{
+        Prompt:    "What is 156 multiplied by 23?",
+        SessionID: "calculator-example",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Process events
+    for event := range stream.EventChan {
+        switch e := event.(type) {
+        case *types.TextDeltaEvent:
+            fmt.Print(e.Delta)
+
+        case *types.ToolCallCompleteEvent:
+            fmt.Printf("\n[Calling tool: %s]\n", e.ToolCall.Name)
+            fmt.Printf("Arguments: %v\n", e.ToolCall.Arguments)
+
+        case *types.ToolExecutionCompleteEvent:
+            fmt.Printf("Result: %s\n\n", e.Result.Content)
+        }
+    }
+
+    if err := stream.Err(); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+## Weather API Tool
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "io"
+    "log"
+    "net/http"
+    "os"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/tool"
+)
+
+func main() {
+    // Create weather tool
+    weatherTool := tool.Define(
+        "get_weather",
+        "Get the current weather for a specific location",
+        map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "location": map[string]any{
+                    "type":        "string",
+                    "description": "City name (e.g., 'London', 'New York')",
+                },
+                "units": map[string]any{
+                    "type":        "string",
+                    "enum":        []string{"celsius", "fahrenheit"},
+                    "description": "Temperature units",
+                },
+            },
+            "required": []string{"location"},
+        },
+        func(args string) (string, error) {
+            var params struct {
+                Location string `json:"location"`
+                Units    string `json:"units"`
+            }
+
+            if err := json.Unmarshal([]byte(args), &params); err != nil {
+                return "", err
+            }
+
+            // Default to celsius
+            if params.Units == "" {
+                params.Units = "celsius"
+            }
+
+            // Call weather API (using wttr.in as example)
+            url := fmt.Sprintf("https://wttr.in/%s?format=j1", params.Location)
+            resp, err := http.Get(url)
+            if err != nil {
+                return "", fmt.Errorf("failed to fetch weather: %w", err)
+            }
+            defer resp.Body.Close()
+
+            if resp.StatusCode != 200 {
+                return "", fmt.Errorf("weather API returned status %d", resp.StatusCode)
+            }
+
+            body, _ := io.ReadAll(resp.Body)
+
+            var weatherData map[string]any
+            if err := json.Unmarshal(body, &weatherData); err != nil {
+                return "", fmt.Errorf("failed to parse weather data: %w", err)
+            }
+
+            // Extract current conditions
+            current := weatherData["current_condition"].([]any)[0].(map[string]any)
+            tempC := current["temp_C"].(string)
+            tempF := current["temp_F"].(string)
+            desc := current["weatherDesc"].([]any)[0].(map[string]any)["value"].(string)
+
+            var temp string
+            if params.Units == "fahrenheit" {
+                temp = fmt.Sprintf("%s°F", tempF)
+            } else {
+                temp = fmt.Sprintf("%s°C", tempC)
+            }
+
+            return fmt.Sprintf("Current weather in %s: %s, %s",
+                params.Location, temp, desc), nil
+        },
+    )
+
+    // Create agent with weather tool
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful weather assistant."),
+        agent.WithTools(weatherTool),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Ask about weather
+    result, err := ag.ChatSync(context.Background(), agent.ChatRequest{
+        Prompt:    "What's the weather like in London?",
+        SessionID: "weather-example",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Print conversation steps
+    for _, step := range result.Steps {
+        fmt.Printf("\nStep %d:\n", step.StepNumber)
+        if step.Content != "" {
+            fmt.Printf("Content: %s\n", step.Content)
+        }
+        for _, toolCall := range step.ToolCalls {
+            fmt.Printf("Tool Call: %s(%v)\n", toolCall.Name, toolCall.Arguments)
+        }
+        for _, toolResult := range step.ToolResults {
+            fmt.Printf("Tool Result: %s\n", toolResult.Content)
+        }
+    }
+}
+```
+
+## Custom Tool Implementation
+
+Implement the `Tool` interface for more control:
+
+```go
+package main
+
+import (
+    "context"
+    "database/sql"
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "strings"
+    "time"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/tool"
+    _ "github.com/lib/pq"
+)
+
+// DatabaseQueryTool implements the tool.Tool interface
+type DatabaseQueryTool struct {
+    db *sql.DB
+}
+
+func (t *DatabaseQueryTool) Name() string {
+    return "query_database"
+}
+
+func (t *DatabaseQueryTool) Description() string {
+    return "Query the database for user information. Returns results as JSON."
+}
+
+func (t *DatabaseQueryTool) Parameters() map[string]any {
+    return map[string]any{
+        "type": "object",
+        "properties": map[string]any{
+            "query": map[string]any{
+                "type":        "string",
+                "description": "SQL SELECT query to execute",
+            },
+        },
+        "required": []string{"query"},
+    }
+}
+
+func (t *DatabaseQueryTool) Execute(ctx context.Context, args string) (string, error) {
+    var params struct {
+        Query string `json:"query"`
+    }
+
+    if err := json.Unmarshal([]byte(args), &params); err != nil {
+        return "", fmt.Errorf("invalid arguments: %w", err)
+    }
+
+    // Security: Only allow SELECT queries
+    query := strings.TrimSpace(strings.ToUpper(params.Query))
+    if !strings.HasPrefix(query, "SELECT") {
+        return "", fmt.Errorf("only SELECT queries are allowed")
+    }
+
+    // Execute with timeout
+    ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+    defer cancel()
+
+    rows, err := t.db.QueryContext(ctx, params.Query)
+    if err != nil {
+        return "", fmt.Errorf("query failed: %w", err)
+    }
+    defer rows.Close()
+
+    // Get column names
+    columns, err := rows.Columns()
+    if err != nil {
+        return "", err
+    }
+
+    // Collect results
+    results := []map[string]any{}
+    for rows.Next() {
+        values := make([]any, len(columns))
+        valuePtrs := make([]any, len(columns))
+        for i := range values {
+            valuePtrs[i] = &values[i]
+        }
+
+        if err := rows.Scan(valuePtrs...); err != nil {
+            return "", err
+        }
+
+        row := make(map[string]any)
+        for i, col := range columns {
+            row[col] = values[i]
+        }
+        results = append(results, row)
+    }
+
+    // Convert to JSON
+    jsonData, err := json.Marshal(results)
+    if err != nil {
+        return "", err
+    }
+
+    return string(jsonData), nil
+}
+
+func main() {
+    // Connect to database
+    db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
+
+    // Create database tool
+    dbTool := &DatabaseQueryTool{db: db}
+
+    // Create agent
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a database assistant. Help users query the database."),
+        agent.WithTools(dbTool),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Ask database questions
+    result, err := ag.ChatSync(context.Background(), agent.ChatRequest{
+        Prompt:    "How many users do we have?",
+        SessionID: "database-example",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println(result.Steps[len(result.Steps)-1].Content)
+}
+```
+
+## Multiple Tools Example
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
+
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/agent"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/provider/openai"
+    "github.com/flowbaker/flowbaker/pkg/ai-sdk/tool"
+)
+
+func main() {
+    // Time tool
+    timeTool := tool.Define(
+        "get_current_time",
+        "Get the current time in a specific timezone",
+        map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "timezone": map[string]any{
+                    "type":        "string",
+                    "description": "Timezone (e.g., 'America/New_York', 'Europe/London')",
+                },
+            },
+            "required": []string{"timezone"},
+        },
+        func(args string) (string, error) {
+            var params struct {
+                Timezone string `json:"timezone"`
+            }
+            json.Unmarshal([]byte(args), &params)
+
+            loc, err := time.LoadLocation(params.Timezone)
+            if err != nil {
+                return "", fmt.Errorf("invalid timezone: %w", err)
+            }
+
+            now := time.Now().In(loc)
+            return now.Format("2006-01-02 15:04:05 MST"), nil
+        },
+    )
+
+    // Random number tool
+    randomTool := tool.Define(
+        "generate_random_number",
+        "Generate a random number between min and max",
+        map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "min": map[string]any{
+                    "type":        "number",
+                    "description": "Minimum value",
+                },
+                "max": map[string]any{
+                    "type":        "number",
+                    "description": "Maximum value",
+                },
+            },
+            "required": []string{"min", "max"},
+        },
+        func(args string) (string, error) {
+            var params struct {
+                Min int `json:"min"`
+                Max int `json:"max"`
+            }
+            json.Unmarshal([]byte(args), &params)
+
+            if params.Max <= params.Min {
+                return "", fmt.Errorf("max must be greater than min")
+            }
+
+            // Simple random (use crypto/rand for production)
+            num := params.Min + (time.Now().Nanosecond() % (params.Max - params.Min + 1))
+            return fmt.Sprintf("%d", num), nil
+        },
+    )
+
+    // String manipulation tool
+    stringTool := tool.Define(
+        "transform_string",
+        "Transform a string (uppercase, lowercase, reverse)",
+        map[string]any{
+            "type": "object",
+            "properties": map[string]any{
+                "text": map[string]any{
+                    "type":        "string",
+                    "description": "The text to transform",
+                },
+                "operation": map[string]any{
+                    "type":        "string",
+                    "enum":        []string{"uppercase", "lowercase", "reverse"},
+                    "description": "Transformation to apply",
+                },
+            },
+            "required": []string{"text", "operation"},
+        },
+        func(args string) (string, error) {
+            var params struct {
+                Text      string `json:"text"`
+                Operation string `json:"operation"`
+            }
+            json.Unmarshal([]byte(args), &params)
+
+            switch params.Operation {
+            case "uppercase":
+                return strings.ToUpper(params.Text), nil
+            case "lowercase":
+                return strings.ToLower(params.Text), nil
+            case "reverse":
+                runes := []rune(params.Text)
+                for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+                    runes[i], runes[j] = runes[j], runes[i]
+                }
+                return string(runes), nil
+            default:
+                return "", fmt.Errorf("unknown operation")
+            }
+        },
+    )
+
+    // Create agent with multiple tools
+    apiKey := os.Getenv("OPENAI_API_KEY")
+    model := openai.New(apiKey, "gpt-4o")
+
+    ag, err := agent.New(
+        agent.WithModel(model),
+        agent.WithSystemPrompt("You are a helpful assistant with various tools."),
+        agent.WithTools(timeTool, randomTool, stringTool),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Test with multiple tool calls
+    result, err := ag.ChatSync(context.Background(), agent.ChatRequest{
+        Prompt:    "What time is it in Tokyo? Also generate a random number between 1 and 100.",
+        SessionID: "multi-tool-example",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println("Final response:", result.Steps[len(result.Steps)-1].Content)
+}
+```
+
+## Next Steps
+
+- Add [Memory Storage](/ai-sdk/examples/memory-storage) for persistent conversations
+- Learn about [Tool Interface](/ai-sdk/tools)
+- Explore [Agent Hooks](/ai-sdk/agent#hooks)

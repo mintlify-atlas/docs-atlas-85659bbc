@@ -1,0 +1,129 @@
+---
+title: 'Integrations Overview'
+description: 'Connect Flowbaker to your favorite services and tools'
+---
+
+Flowbaker provides 46+ integrations to connect your workflows with external services, databases, AI models, and utilities. Each integration is designed to be self-hosted and secure, with no data leaving your infrastructure.
+
+## How Integrations Work
+
+Integrations in Flowbaker consist of:
+
+- **Credentials**: Secure authentication configuration (API keys, OAuth, connection strings)
+- **Actions**: Operations you can perform (send message, query database, generate text)
+- **Triggers**: Events that start workflows (new message, scheduled time, webhook)
+
+## Integration Categories
+
+Flowbaker integrations are organized into logical categories:
+
+### AI & Agents
+
+Power your workflows with advanced AI capabilities:
+
+- **ai_agent** - Tool-based AI agent with multi-step reasoning
+- **openai** - GPT models for chat, completion, and image generation
+- **claude** - Anthropic's Claude models for advanced reasoning
+- **gemini** - Google's Gemini models
+- **groq** - Fast inference with Groq
+- **chat** - Generic chat interface
+- **flowbaker_agent_memory** - Conversation memory for AI agents
+
+### Communication
+
+Connect with messaging and email platforms:
+
+- **discord** - Send messages, manage channels, handle events
+- **slack** - Send messages, get messages, add reactions
+- **telegram** - Telegram bot integration
+- **teams** - Microsoft Teams messaging
+- **resend** - Email delivery service
+- **gmail** - Google Gmail integration
+
+### Development
+
+Integrate with development tools and APIs:
+
+- **github** - Manage issues, PRs, files, and releases
+- **gitlab** - GitLab project management
+- **http** - Make HTTP requests to any API
+- **webhook** - Receive webhook events
+- **jira** - Issue tracking and project management
+- **linear** - Modern project management
+
+### Storage & Databases
+
+Connect to data stores and cloud storage:
+
+- **postgresql** - Relational database queries and operations
+- **mongo** - MongoDB document database
+- **redis** - In-memory data structure store
+- **s3** - Amazon S3 object storage
+- **snowflake** - Cloud data warehouse
+- **dropbox** - File storage and sharing
+- **google_drive** - Google Drive file management
+- **google_sheets** - Spreadsheet operations
+
+### Utilities
+
+Data transformation and workflow utilities:
+
+- **cron** - Schedule workflows to run at specific times
+- **jwt** - JSON Web Token operations
+- **base64** - Encoding and decoding
+- **transform** - Data transformation operations
+- **manipulation** - Data manipulation utilities
+- **condition** - Conditional logic
+- **storage** - Internal storage operations
+- **split_array** - Array splitting utilities
+- **items_to_item** - Array to item conversion
+- **rawfiletoitem** - Parse files (CSV, JSON, XML, YAML, XLSX)
+
+### Business & Productivity
+
+Integrate with business tools:
+
+- **notion** - Notion workspace integration
+- **stripe** - Payment processing
+- **pipedrive** - CRM and sales pipeline
+- **startups_watch** - Startup monitoring
+
+### Other Integrations
+
+- **youtube** - YouTube video operations
+- **brightdata** - Web scraping and data collection
+- **content_classifier** - Content classification
+- **knowledge** - Knowledge base operations
+- **click** - Click tracking
+- **toolset** - Custom tool definitions
+- **on_error** - Error handling
+- **send_response** - Response handling
+
+## Getting Started
+
+To use an integration:
+
+1. **Configure Credentials**: Set up authentication in the Flowbaker UI
+2. **Add to Workflow**: Drag the integration node into your workflow
+3. **Configure Action**: Choose the action and set parameters
+4. **Connect Nodes**: Link the integration to other workflow nodes
+5. **Test**: Run your workflow to verify the integration works
+
+## Security
+
+All integration credentials are:
+
+- Stored encrypted in your database
+- Never sent to external services except when making authenticated requests
+- Scoped to your Flowbaker instance
+- Protected by your authentication layer
+
+## Next Steps
+
+Explore integration categories:
+
+- [AI Agents](/integrations/ai-agents) - Build intelligent workflows with AI
+- [Communication](/integrations/communication) - Connect messaging platforms
+- [Development](/integrations/development) - Integrate with dev tools
+- [Storage](/integrations/storage) - Connect to databases and storage
+- [Utilities](/integrations/utilities) - Data transformation and logic

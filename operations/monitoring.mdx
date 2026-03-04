@@ -1,0 +1,296 @@
+---
+title: Monitoring
+description: Monitor your Flowbaker executor health, metrics, and logging
+---
+
+## Health Check Endpoint
+
+Flowbaker includes a built-in health check endpoint that can be used to verify the executor is running and responsive.
+
+### Endpoint Details
+
+**URL:** `GET /health`
+
+**Authentication:** None required (public endpoint)
+
+**Response Format:**
+
+```json
+{
+  "status": "healthy",
+  "service": "flowbaker-executor",
+  "version": "1.0.0",
+  "timestamp": "2026-03-04T10:00:00Z"
+}
+```
+
+During initial setup, the health check also includes a `setup_mode` field:
+
+```json
+{
+  "status": "healthy",
+  "service": "flowbaker-executor",
+  "version": "1.0.0",
+  "timestamp": "2026-03-04T10:00:00Z",
+  "setup_mode": true
+}
+```
+
+### Docker Health Check
+
+The Dockerfile includes an automated health check configuration:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+```
+
+**Parameters:**
+- **Interval:** Health checks run every 30 seconds
+- **Timeout:** Each check must complete within 3 seconds
+- **Start Period:** Initial grace period of 5 seconds after container starts
+- **Retries:** Container marked unhealthy after 3 consecutive failures
+
+### Monitoring with Docker
+
+Check the health status of your container:
+
+```bash
+# View container health status
+docker ps
+
+# Inspect detailed health information
+docker inspect --format='{{json .State.Health}}' flowbaker-executor
+
+# View health check logs
+docker inspect --format='{{range .State.Health.Log}}{{.Output}}{{end}}' flowbaker-executor
+```
+
+### Kubernetes Liveness and Readiness Probes
+
+Configure health checks in your Kubernetes deployment:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowbaker-executor
+spec:
+  template:
+    spec:
+      containers:
+      - name: flowbaker
+        image: flowbaker/executor:latest
+        ports:
+        - containerPort: 8081
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 30
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 3
+          periodSeconds: 10
+          timeoutSeconds: 3
+```
+
+## Logging
+
+Flowbaker uses structured logging with [zerolog](https://github.com/rs/zerolog) for high-performance JSON logging.
+
+### Log Levels
+
+The executor supports standard log levels:
+
+- **Debug:** Detailed diagnostic information (disabled by default)
+- **Info:** General informational messages
+- **Warn:** Warning messages for non-critical issues
+- **Error:** Error messages for failures
+- **Fatal:** Critical errors that cause the executor to stop
+
+### Enabling Debug Logging
+
+Enable debug logging using the `--debug` flag:
+
+```bash
+# Run with debug logging
+flowbaker start --debug
+
+# Or set via environment variable
+export FLOWBAKER_DEBUG=true
+flowbaker start
+```
+
+### Log Format
+
+Logs are output in a human-readable console format to stderr:
+
+```
+2026-03-04T10:00:00Z INF Starting executor service
+2026-03-04T10:00:01Z INF Executor configuration loaded executor_id=exec_123 api_base_url=https://api.flowbaker.io
+2026-03-04T10:00:02Z INF Flowbaker client with signature-based auth ready
+```
+
+For JSON logging in production environments, logs can be parsed by log aggregation systems.
+
+### Important Log Events
+
+**Startup:**
+```
+INF Starting executor service
+INF Executor configuration loaded executor_id=... api_base_url=...
+INF Flowbaker client with signature-based auth ready
+```
+
+**API Signature Verification:**
+```
+DBG API signature verified successfully path=/workspaces/ws_123/executions method=POST workspace_id=ws_123
+ERR API signature verification failed path=/workspaces/ws_123/executions error="timestamp outside allowed window"
+```
+
+**Credential Operations:**
+```
+INF Getting encrypted credential workspace_id=ws_123 credential_id=cred_456
+ERR Failed to decrypt credential error="credential expired"
+```
+
+**Workspace Registration:**
+```
+INF Workspace registered successfully workspace_id=ws_123
+ERR Failed to register workspace error="invalid passcode"
+```
+
+### Log Aggregation
+
+For production deployments, consider integrating with log aggregation services:
+
+**Docker Logging Drivers:**
+```bash
+docker run -d \
+  --name flowbaker-executor \
+  --log-driver=json-file \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
+  flowbaker/executor:latest
+```
+
+**Kubernetes Logging:**
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowbaker-logging
+data:
+  fluent-bit.conf: |
+    [INPUT]
+        Name tail
+        Path /var/log/containers/flowbaker-executor*.log
+        Parser docker
+    [OUTPUT]
+        Name cloudwatch
+        Match *
+        region us-east-1
+        log_group_name /aws/eks/flowbaker
+```
+
+## Metrics
+
+### Service Metrics
+
+Monitor these key aspects of your executor:
+
+**Availability:**
+- Health endpoint response time
+- HTTP server uptime
+- Container restart count
+
+**Performance:**
+- Workflow execution duration
+- API request latency
+- Credential decryption time
+
+**Security:**
+- Failed signature verification attempts
+- Credential expiration events
+- Unauthorized access attempts
+
+### Version Information
+
+Retrieve version and build information programmatically:
+
+```bash
+# The version info is included in /health response
+curl http://localhost:8081/health | jq '.version'
+```
+
+Version metadata includes:
+- Semantic version
+- Git commit hash
+- Build date
+- Build user
+- Go version
+- Platform (OS/architecture)
+
+### Custom Metrics Collection
+
+Integrate with monitoring platforms:
+
+**Prometheus (Example Integration):**
+```yaml
+scrape_configs:
+  - job_name: 'flowbaker-executor'
+    static_configs:
+      - targets: ['localhost:8081']
+    metrics_path: /health
+    scrape_interval: 30s
+```
+
+**Datadog (Example):**
+```yaml
+logs:
+  - type: docker
+    name: flowbaker-executor
+    service: flowbaker
+    source: go
+```
+
+## Best Practices
+
+<Tip>
+**Always configure health checks** in production environments to enable automatic recovery from failures.
+</Tip>
+
+<Warning>
+**Monitor credential expiration** - Expired credentials will cause workflow execution failures. Check logs for "credential expired" errors.
+</Warning>
+
+### Recommended Monitoring Setup
+
+1. **Configure health checks** in your orchestration platform (Docker, Kubernetes, etc.)
+2. **Enable debug logging** during initial setup and troubleshooting
+3. **Set up log aggregation** for centralized log analysis
+4. **Monitor API signature failures** as they may indicate security issues
+5. **Track executor uptime** and restart patterns
+6. **Alert on repeated health check failures**
+
+### Alerting Thresholds
+
+Recommended alert conditions:
+
+- Health check failing for 3+ consecutive attempts
+- More than 10 signature verification failures per minute
+- Container restart more than 3 times in 5 minutes
+- Credential decryption failure rate above 1%
+- Log level ERROR or FATAL messages
+
+## Related Resources
+
+- [Security](/operations/security) - Learn about authentication and encryption
+- [Troubleshooting](/operations/troubleshooting) - Debug common issues
+- [Docker Deployment](/deployment/docker) - Deploy Flowbaker in production

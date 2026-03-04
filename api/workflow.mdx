@@ -1,0 +1,140 @@
+---
+title: Workflow API
+description: Core workflow types and methods for Flowbaker automation
+---
+
+## Workflow
+
+The `Workflow` type represents a workflow automation in Flowbaker.
+
+### Type Definition
+
+<ParamField path="ID" type="string">
+  Unique identifier for the workflow
+</ParamField>
+
+<ParamField path="Name" type="string">
+  Display name of the workflow
+</ParamField>
+
+<ParamField path="Description" type="string">
+  Description of what the workflow does
+</ParamField>
+
+<ParamField path="Slug" type="string">
+  URL-friendly identifier for the workflow
+</ParamField>
+
+<ParamField path="WorkspaceID" type="string">
+  ID of the workspace this workflow belongs to
+</ParamField>
+
+<ParamField path="AuthorUserID" type="string">
+  ID of the user who created the workflow
+</ParamField>
+
+<ParamField path="Nodes" type="[]WorkflowNode">
+  Array of workflow nodes (triggers and actions)
+</ParamField>
+
+<ParamField path="Settings" type="WorkflowSettings">
+  Configuration settings for the workflow
+</ParamField>
+
+<ParamField path="LastUpdatedAt" type="time.Time">
+  Timestamp of the last update
+</ParamField>
+
+<ParamField path="ActivationStatus" type="WorkflowActivationStatus">
+  Current activation status of the workflow
+</ParamField>
+
+<ParamField path="DeletedAt" type="*time.Time">
+  Timestamp of deletion (nil if not deleted)
+</ParamField>
+
+## WorkflowSettings
+
+Configuration settings for workflow execution.
+
+<ParamField path="NodeExecutionLimit" type="int">
+  Maximum number of nodes that can be executed in a single workflow run
+</ParamField>
+
+## WorkflowActivationStatus
+
+Enum type representing the activation status of a workflow.
+
+### Constants
+
+- `WorkflowActivationStatusActive` - Workflow is active and can be triggered
+- `WorkflowActivationStatusInactive` - Workflow is inactive and will not be triggered
+
+## WorkflowType
+
+Enum type representing the type of workflow.
+
+### Constants
+
+- `WorkflowTypeDefault` - Standard workflow
+- `WorkflowTypeTesting` - Testing workflow
+
+## Methods
+
+### IsActive()
+
+Returns whether the workflow is currently active.
+
+```go
+func (w Workflow) IsActive() bool
+```
+
+**Returns:** `true` if `ActivationStatus` is `WorkflowActivationStatusActive`
+
+### GetNodeByID(nodeID string)
+
+Retrieves a specific node from the workflow by its ID.
+
+```go
+func (w Workflow) GetNodeByID(nodeID string) (WorkflowNode, bool)
+```
+
+**Parameters:**
+- `nodeID` - The ID of the node to retrieve
+
+**Returns:**
+- `WorkflowNode` - The found node
+- `bool` - `true` if node was found, `false` otherwise
+
+### GetTriggerNodes()
+
+Retrieves all trigger nodes in the workflow.
+
+```go
+func (w Workflow) GetTriggerNodes() []WorkflowNode
+```
+
+**Returns:** Array of all nodes with type `NodeTypeTrigger`
+
+### GetActionNodes()
+
+Retrieves all action nodes in the workflow.
+
+```go
+func (w Workflow) GetActionNodes() []WorkflowNode
+```
+
+**Returns:** Array of all nodes with type `NodeTypeAction`
+
+### GetSubNodes(nodeID string)
+
+Retrieves all child nodes of a specific node.
+
+```go
+func (w Workflow) GetSubNodes(nodeID string) []WorkflowNode
+```
+
+**Parameters:**
+- `nodeID` - The ID of the parent node
+
+**Returns:** Array of all nodes where `ParentID` matches the given `nodeID`

@@ -1,0 +1,271 @@
+---
+title: Agent API
+description: AI Agent interface for building conversational AI applications
+---
+
+## Agent
+
+The `Agent` struct provides a complete AI agent implementation with tool calling, memory management, and streaming support.
+
+### Type Definition
+
+<ParamField path="MaxIterations" type="int">
+  Maximum number of reasoning iterations (default: 10)
+</ParamField>
+
+<ParamField path="Tools" type="[]tool.Tool">
+  Array of tools available to the agent
+</ParamField>
+
+<ParamField path="UserInputTools" type="map[string]tool.UserInputTool">
+  Tools that require human intervention
+</ParamField>
+
+<ParamField path="SystemPrompt" type="string">
+  System instructions for the agent
+</ParamField>
+
+<ParamField path="Model" type="provider.LanguageModel">
+  The language model to use (required)
+</ParamField>
+
+<ParamField path="Memory" type="memory.Store">
+  Memory store for conversation history
+</ParamField>
+
+<ParamField path="ConversationHistory" type="int">
+  Number of messages to retrieve from memory
+</ParamField>
+
+<ParamField path="TotalUsage" type="types.Usage">
+  Accumulated token usage across all steps
+</ParamField>
+
+<ParamField path="FinishReason" type="string">
+  Reason the agent stopped (stop, length, human_intervention, etc.)
+</ParamField>
+
+## Creating an Agent
+
+Use the `New()` function with options to create an agent:
+
+```go
+func New(opts ...Option) (*Agent, error)
+```
+
+### Options
+
+<ResponseField name="WithModel" type="func(provider.LanguageModel) Option">
+  Sets the language model (required)
+</ResponseField>
+
+<ResponseField name="WithTools" type="func(...tool.Tool) Option">
+  Adds tools the agent can use
+</ResponseField>
+
+<ResponseField name="WithSystemPrompt" type="func(string) Option">
+  Sets the system prompt
+</ResponseField>
+
+<ResponseField name="WithMaxIterations" type="func(int) Option">
+  Sets maximum reasoning iterations
+</ResponseField>
+
+<ResponseField name="WithMemory" type="func(memory.Store) Option">
+  Sets the memory store for conversation history
+</ResponseField>
+
+<ResponseField name="WithConversationHistoryLimit" type="func(int) Option">
+  Sets how many messages to retrieve from memory
+</ResponseField>
+
+<ResponseField name="WithCancelContext" type="func(context.Context) Option">
+  Sets a cancellation context
+</ResponseField>
+
+<ResponseField name="WithHooks" type="func(Hooks) Option">
+  Sets lifecycle hooks for monitoring
+</ResponseField>
+
+### Example
+
+```go
+agent, err := agent.New(
+    agent.WithModel(model),
+    agent.WithSystemPrompt("You are a helpful assistant."),
+    agent.WithTools(calculatorTool, searchTool),
+    agent.WithMaxIterations(15),
+    agent.WithMemory(memoryStore),
+)
+```
+
+## Chat Methods
+
+### Chat (Streaming)
+
+Initiates a streaming chat session.
+
+```go
+func (a *Agent) Chat(ctx context.Context, req ChatRequest) (ChatStream, error)
+```
+
+<ParamField path="ChatRequest" type="struct">
+  Request parameters for the chat
+  
+  <ParamField path="Prompt" type="string">
+    The user's message
+  </ParamField>
+  
+  <ParamField path="SessionID" type="string">
+    Session ID for conversation continuity
+  </ParamField>
+  
+  <ParamField path="ToolResults" type="[]types.ToolResult">
+    Results from user input tools (for resuming after intervention)
+  </ParamField>
+</ParamField>
+
+**Returns:** `ChatStream` with events channel
+
+#### Example
+
+```go
+stream, err := agent.Chat(ctx, agent.ChatRequest{
+    Prompt: "What's the weather like?",
+    SessionID: "user-123",
+})
+if err != nil {
+    return err
+}
+
+for event := range stream.EventChan {
+    switch e := event.(type) {
+    case *types.TextDeltaEvent:
+        fmt.Print(e.Delta)
+    case *types.ToolCallCompleteEvent:
+        fmt.Printf("Calling tool: %s\n", e.ToolCall.Name)
+    }
+}
+
+if err := stream.Err(); err != nil {
+    return err
+}
+```
+
+### ChatSync (Blocking)
+
+Blocking version that waits for completion.
+
+```go
+func (a *Agent) ChatSync(ctx context.Context, req ChatRequest) (ChatSyncResult, error)
+```
+
+**Returns:**
+
+<ResponseField name="ChatSyncResult" type="struct">
+  <ResponseField name="Steps" type="[]*Step">
+    All reasoning steps taken
+  </ResponseField>
+  
+  <ResponseField name="TotalUsage" type="types.Usage">
+    Total token usage
+  </ResponseField>
+  
+  <ResponseField name="FinishReason" type="string">
+    Why the agent stopped
+  </ResponseField>
+</ResponseField>
+
+## Step
+
+Represents a single reasoning step in the agent's execution.
+
+<ParamField path="StepNumber" type="int">
+  Sequential step number
+</ParamField>
+
+<ParamField path="Content" type="string">
+  Text content generated in this step
+</ParamField>
+
+<ParamField path="ToolCalls" type="[]types.ToolCall">
+  Tools called in this step
+</ParamField>
+
+<ParamField path="ToolResults" type="[]types.ToolResult">
+  Results from tool executions
+</ParamField>
+
+<ParamField path="Usage" type="types.Usage">
+  Token usage for this step
+</ParamField>
+
+<ParamField path="FinishReason" type="string">
+  Finish reason for this step
+</ParamField>
+
+<ParamField path="Warnings" type="[]types.Warning">
+  Any warnings generated
+</ParamField>
+
+## Hooks
+
+Lifecycle hooks for monitoring and customization.
+
+<ParamField path="OnBeforeGenerate" type="func(ctx, *GenerateRequest, *Step)">
+  Called before each LLM generation
+</ParamField>
+
+<ParamField path="OnGenerationFailed" type="func(ctx, *GenerateRequest, *Step, error)">
+  Called when generation fails
+</ParamField>
+
+<ParamField path="OnStepStart" type="func(ctx, *Step)">
+  Called when a step begins
+</ParamField>
+
+<ParamField path="OnStepComplete" type="func(ctx, *Step)">
+  Called when a step completes
+</ParamField>
+
+<ParamField path="OnBeforeMemoryRetrieve" type="func(ctx, memory.Filter)">
+  Called before retrieving memory
+</ParamField>
+
+<ParamField path="OnMemoryRetrieved" type="func(ctx, memory.Filter, types.Conversation)">
+  Called after memory is retrieved
+</ParamField>
+
+<ParamField path="OnMemoryRetrievalFailed" type="func(ctx, memory.Filter, error)">
+  Called when memory retrieval fails
+</ParamField>
+
+<ParamField path="OnBeforeMemorySave" type="func(ctx, types.Conversation)">
+  Called before saving to memory
+</ParamField>
+
+<ParamField path="OnMemorySaved" type="func(ctx, types.Conversation)">
+  Called after memory is saved
+</ParamField>
+
+<ParamField path="OnMemorySaveFailed" type="func(ctx, types.Conversation, error)">
+  Called when memory save fails
+</ParamField>
+
+## ChatStream
+
+Represents an active streaming chat session.
+
+<ParamField path="EventChan" type="<-chan types.StreamEvent">
+  Channel receiving stream events
+</ParamField>
+
+### Methods
+
+<ResponseField name="Err()" type="error">
+  Returns any error that occurred during streaming
+</ResponseField>
+
+<ResponseField name="Wait()" type="error">
+  Blocks until stream completes and returns any error
+</ResponseField>

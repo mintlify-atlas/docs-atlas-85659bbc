@@ -1,0 +1,241 @@
+---
+title: Integration API
+description: Integration types and configuration for workflow actions and triggers
+---
+
+## Integration
+
+Represents an integration that provides actions and/or triggers for workflows.
+
+### Type Definition
+
+<ParamField path="ID" type="IntegrationType">
+  Unique identifier for the integration (e.g., "slack", "openai", "http")
+</ParamField>
+
+<ParamField path="Name" type="string">
+  Display name of the integration
+</ParamField>
+
+<ParamField path="Description" type="string">
+  Description of what the integration does
+</ParamField>
+
+<ParamField path="CredentialProperties" type="[]NodeProperty">
+  Properties required for authentication/credentials
+</ParamField>
+
+<ParamField path="Actions" type="[]IntegrationAction">
+  Available actions for this integration
+</ParamField>
+
+<ParamField path="Triggers" type="[]IntegrationTrigger">
+  Available triggers for this integration
+</ParamField>
+
+<ParamField path="EmbeddingModels" type="[]IntegrationEmbeddingModel">
+  Available embedding models (for AI integrations)
+</ParamField>
+
+<ParamField path="IsGroup" type="bool">
+  Whether this integration is a group of related integrations
+</ParamField>
+
+<ParamField path="CanTestConnection" type="bool">
+  Whether the connection can be tested before saving
+</ParamField>
+
+<ParamField path="IsCredentialOptional" type="bool">
+  Whether credentials are optional for this integration
+</ParamField>
+
+## IntegrationType
+
+String enum representing available integrations. Common values include:
+
+- `IntegrationType_Slack` - Slack integration
+- `IntegrationType_Discord` - Discord integration
+- `IntegrationType_OpenAI` - OpenAI integration
+- `IntegrationType_HTTP` - HTTP request integration
+- `IntegrationType_Webhook` - Webhook trigger integration
+- `IntegrationType_PostgreSQL` - PostgreSQL database integration
+- `IntegrationType_MongoDB` - MongoDB database integration
+- `IntegrationType_Gmail` - Gmail integration
+- `IntegrationType_Github` - GitHub integration
+- `IntegrationType_AIAgent` - AI Agent integration
+- And many more...
+
+## IntegrationAction
+
+Represents an action that can be performed by an integration.
+
+<ParamField path="ID" type="string">
+  Unique identifier for this action
+</ParamField>
+
+<ParamField path="ActionType" type="IntegrationActionType">
+  The type of action
+</ParamField>
+
+<ParamField path="Name" type="string">
+  Display name of the action
+</ParamField>
+
+<ParamField path="Description" type="string">
+  Description of what the action does
+</ParamField>
+
+<ParamField path="Properties" type="[]NodeProperty">
+  Configuration properties for this action
+</ParamField>
+
+<ParamField path="HandlesByContext" type="map[ActionUsageContext]ContextHandles">
+  Input/output handles organized by usage context
+</ParamField>
+
+<ParamField path="SupportedContexts" type="[]ActionUsageContext">
+  Contexts where this action is available
+</ParamField>
+
+<ParamField path="CombinedContexts" type="[]ActionUsageContext">
+  Combined contexts for multi-purpose actions
+</ParamField>
+
+<ParamField path="IsNonAvailableForDefaultOAuth" type="bool">
+  Whether this action requires custom OAuth setup
+</ParamField>
+
+<ParamField path="Decoration" type="NodeDecoration">
+  UI decoration settings for this action
+</ParamField>
+
+## IntegrationTrigger
+
+Represents a trigger event that can start a workflow.
+
+<ParamField path="ID" type="string">
+  Unique identifier for this trigger
+</ParamField>
+
+<ParamField path="EventType" type="IntegrationTriggerEventType">
+  The type of trigger event
+</ParamField>
+
+<ParamField path="Name" type="string">
+  Display name of the trigger
+</ParamField>
+
+<ParamField path="Description" type="string">
+  Description of when the trigger fires
+</ParamField>
+
+<ParamField path="Properties" type="[]NodeProperty">
+  Configuration properties for this trigger
+</ParamField>
+
+<ParamField path="HandlesByContext" type="map[ActionUsageContext]ContextHandles">
+  Input/output handles organized by usage context
+</ParamField>
+
+<ParamField path="IsNonAvailableForDefaultOAuth" type="bool">
+  Whether this trigger requires custom OAuth setup
+</ParamField>
+
+<ParamField path="Decoration" type="NodeDecoration">
+  UI decoration settings for this trigger
+</ParamField>
+
+## ActionUsageContext
+
+Enum representing the context in which an integration is used.
+
+### Constants
+
+- `UsageContextWorkflow` - Regular workflow automation
+- `UsageContextTool` - AI Agent tool
+- `UsageContextLLMProvider` - LLM provider for AI agents
+- `UsageContextMemoryProvider` - Memory provider for AI agents
+
+## NodeDecoration
+
+UI decoration settings for nodes.
+
+<ParamField path="HasButton" type="bool">
+  Whether to show an action button
+</ParamField>
+
+<ParamField path="DisableEditor" type="bool">
+  Whether to disable the node editor
+</ParamField>
+
+## ContextHandles
+
+Defines input and output handles for a specific context.
+
+<ParamField path="Input" type="[]NodeHandle">
+  Array of input handles
+</ParamField>
+
+<ParamField path="Output" type="[]NodeHandle">
+  Array of output handles
+</ParamField>
+
+## NodeHandle
+
+Represents a connection point on a node.
+
+<ParamField path="Index" type="int">
+  Position index of this handle
+</ParamField>
+
+<ParamField path="Type" type="NodeHandleType">
+  Type of handle (default, success, destructive)
+</ParamField>
+
+<ParamField path="Position" type="NodeHandlePosition">
+  Visual position (top, bottom, left, right)
+</ParamField>
+
+<ParamField path="Text" type="string">
+  Label text for the handle
+</ParamField>
+
+<ParamField path="UsageContext" type="ActionUsageContext">
+  Context where this handle is available
+</ParamField>
+
+<ParamField path="AllowedIntegrations" type="[]IntegrationType">
+  Array of integration types that can connect to this handle
+</ParamField>
+
+## Methods
+
+### GetActionByType(actionType IntegrationActionType)
+
+Retrieves a specific action by its type.
+
+```go
+func (i Integration) GetActionByType(actionType IntegrationActionType) (IntegrationAction, bool)
+```
+
+**Parameters:**
+- `actionType` - The action type to retrieve
+
+**Returns:**
+- `IntegrationAction` - The found action
+- `bool` - `true` if action was found, `false` otherwise
+
+### GetTriggerByType(triggerType IntegrationTriggerEventType)
+
+Retrieves a specific trigger by its type.
+
+```go
+func (i Integration) GetTriggerByType(triggerType IntegrationTriggerEventType) (IntegrationTrigger, bool)
+```
+
+**Parameters:**
+- `triggerType` - The trigger type to retrieve
+
+**Returns:**
+- `IntegrationTrigger` - The found trigger
+- `bool` - `true` if trigger was found, `false` otherwise

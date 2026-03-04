@@ -1,0 +1,670 @@
+---
+title: Installation
+description: Complete installation guide for Flowbaker executor with multiple deployment options including binary, Docker, and building from source.
+---
+
+Flowbaker executor can be installed in multiple ways depending on your environment and preferences. This guide covers all installation methods with detailed instructions.
+
+## System Requirements
+
+### Minimum Requirements
+
+| Component | Requirement |
+|-----------|-------------|
+| **OS** | Linux, macOS, Windows |
+| **Architecture** | amd64 (x86_64), arm64 |
+| **Memory** | 512 MB RAM minimum, 1 GB recommended |
+| **Disk Space** | 100 MB for binary, 500 MB for Docker |
+| **Network** | Internet connection required |
+| **Ports** | Port 8081 (configurable) |
+
+### Go Version (for building from source)
+
+```go
+go 1.25.0
+```
+
+<Info>
+Flowbaker requires Go 1.25.0 or later if you're building from source. Pre-built binaries have no Go dependency.
+</Info>
+
+## Installation Methods
+
+<Accordion title="Method 1: Download Pre-built Binary (Recommended)" defaultOpen>
+  The easiest way to install Flowbaker is using a pre-built binary from GitHub releases.
+
+  ### Linux (amd64)
+
+  ```bash
+  # Download the latest version
+  curl -L https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-linux-amd64 -o flowbaker
+  
+  # Make executable
+  chmod +x flowbaker
+  
+  # Move to system path (optional)
+  sudo mv flowbaker /usr/local/bin/
+  
+  # Verify installation
+  flowbaker --help
+  ```
+
+  ### Linux (arm64)
+
+  ```bash
+  curl -L https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-linux-arm64 -o flowbaker
+  chmod +x flowbaker
+  sudo mv flowbaker /usr/local/bin/
+  ```
+
+  ### macOS (Apple Silicon)
+
+  ```bash
+  # Download for M1/M2/M3 Macs
+  curl -L https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-darwin-arm64 -o flowbaker
+  chmod +x flowbaker
+  sudo mv flowbaker /usr/local/bin/
+  ```
+
+  ### macOS (Intel)
+
+  ```bash
+  curl -L https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-darwin-amd64 -o flowbaker
+  chmod +x flowbaker
+  sudo mv flowbaker /usr/local/bin/
+  ```
+
+  ### Windows
+
+  ```powershell
+  # Using PowerShell
+  Invoke-WebRequest -Uri "https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-windows-amd64.exe" -OutFile "flowbaker.exe"
+  
+  # Move to a directory in your PATH
+  Move-Item flowbaker.exe C:\Windows\System32\flowbaker.exe
+  ```
+
+  Or download manually from the [releases page](https://github.com/flowbaker/flowbaker/releases).
+</Accordion>
+
+<Accordion title="Method 2: Docker (Recommended for Production)">
+  Docker provides isolation and easy deployment across environments.
+
+  ### Pull from GitHub Container Registry
+
+  ```bash
+  # Pull the latest version
+  docker pull ghcr.io/flowbaker/flowbaker:latest
+  
+  # Or pull a specific version
+  docker pull ghcr.io/flowbaker/flowbaker:v1.0.0
+  ```
+
+  ### Run with Docker
+
+  ```bash
+  docker run -d \
+    --name flowbaker-executor \
+    -p 8081:8081 \
+    -v flowbaker-data:/app/.flowbaker \
+    --restart unless-stopped \
+    ghcr.io/flowbaker/flowbaker:latest
+  ```
+
+  ### Docker Compose
+
+  Create a `docker-compose.yml` file:
+
+  ```yaml docker-compose.yml
+  version: '3.8'
+  
+  services:
+    flowbaker:
+      image: ghcr.io/flowbaker/flowbaker:latest
+      container_name: flowbaker-executor
+      ports:
+        - "8081:8081"
+      volumes:
+        - flowbaker-data:/app/.flowbaker
+      restart: unless-stopped
+      environment:
+        - LOG_LEVEL=info
+      healthcheck:
+        test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+        interval: 30s
+        timeout: 3s
+        retries: 3
+        start_period: 5s
+  
+  volumes:
+    flowbaker-data:
+  ```
+
+  Start the service:
+
+  ```bash
+  docker-compose up -d
+  ```
+
+  ### View Logs
+
+  ```bash
+  # Follow logs
+  docker logs -f flowbaker-executor
+  
+  # With docker-compose
+  docker-compose logs -f
+  ```
+
+  ### Docker Health Check
+
+  The Docker image includes a built-in health check that monitors the `/health` endpoint:
+
+  ```dockerfile
+  HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+      CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+  ```
+</Accordion>
+
+<Accordion title="Method 3: Build from Source">
+  Build Flowbaker from source for development or custom modifications.
+
+  ### Prerequisites
+
+  - Go 1.25.0 or later
+  - Git
+
+  ### Clone and Build
+
+  ```bash
+  # Clone the repository
+  git clone https://github.com/flowbaker/flowbaker.git
+  cd flowbaker
+  
+  # Download dependencies
+  go mod download
+  
+  # Build the binary
+  go build -o flowbaker cmd/main.go
+  
+  # Run the executor
+  ./flowbaker start
+  ```
+
+  ### Build with Version Information
+
+  To include version metadata in the binary:
+
+  ```bash
+  VERSION="1.0.0"
+  GIT_COMMIT=$(git rev-parse HEAD)
+  BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+  BUILD_USER=$(whoami)
+  
+  go build -a -installsuffix cgo \
+    -ldflags "-X github.com/flowbaker/flowbaker/internal/version.Version=${VERSION} \
+              -X github.com/flowbaker/flowbaker/internal/version.GitCommit=${GIT_COMMIT} \
+              -X github.com/flowbaker/flowbaker/internal/version.BuildDate=${BUILD_DATE} \
+              -X github.com/flowbaker/flowbaker/internal/version.BuildUser=${BUILD_USER}" \
+    -o flowbaker ./cmd
+  ```
+
+  ### Cross-Compilation
+
+  Build for different platforms:
+
+  ```bash
+  # Linux amd64
+  GOOS=linux GOARCH=amd64 go build -o flowbaker-linux-amd64 cmd/main.go
+  
+  # Linux arm64
+  GOOS=linux GOARCH=arm64 go build -o flowbaker-linux-arm64 cmd/main.go
+  
+  # macOS amd64
+  GOOS=darwin GOARCH=amd64 go build -o flowbaker-darwin-amd64 cmd/main.go
+  
+  # macOS arm64 (Apple Silicon)
+  GOOS=darwin GOARCH=arm64 go build -o flowbaker-darwin-arm64 cmd/main.go
+  
+  # Windows amd64
+  GOOS=windows GOARCH=amd64 go build -o flowbaker-windows-amd64.exe cmd/main.go
+  ```
+
+  ### Build Docker Image Locally
+
+  ```bash
+  docker build -t flowbaker:local \
+    --build-arg VERSION=dev \
+    --build-arg GIT_COMMIT=$(git rev-parse HEAD) \
+    --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+    --build-arg BUILD_USER=$(whoami) \
+    .
+  ```
+</Accordion>
+
+<Accordion title="Method 4: System Service (systemd)">
+  Set up Flowbaker as a system service for automatic startup on Linux.
+
+  ### Create systemd Service File
+
+  Create `/etc/systemd/system/flowbaker.service`:
+
+  ```ini /etc/systemd/system/flowbaker.service
+  [Unit]
+  Description=Flowbaker Executor
+  Documentation=https://github.com/flowbaker/flowbaker
+  After=network.target
+  
+  [Service]
+  Type=simple
+  User=flowbaker
+  Group=flowbaker
+  ExecStart=/usr/local/bin/flowbaker start
+  Restart=always
+  RestartSec=10
+  StandardOutput=journal
+  StandardError=journal
+  SyslogIdentifier=flowbaker
+  
+  # Security hardening
+  NoNewPrivileges=true
+  PrivateTmp=true
+  ProtectSystem=strict
+  ProtectHome=true
+  ReadWritePaths=/var/lib/flowbaker
+  
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  ### Setup and Start Service
+
+  ```bash
+  # Create dedicated user
+  sudo useradd -r -s /bin/false flowbaker
+  
+  # Create data directory
+  sudo mkdir -p /var/lib/flowbaker
+  sudo chown flowbaker:flowbaker /var/lib/flowbaker
+  
+  # Install binary
+  sudo cp flowbaker /usr/local/bin/
+  sudo chmod +x /usr/local/bin/flowbaker
+  
+  # Reload systemd
+  sudo systemctl daemon-reload
+  
+  # Enable and start service
+  sudo systemctl enable flowbaker
+  sudo systemctl start flowbaker
+  
+  # Check status
+  sudo systemctl status flowbaker
+  ```
+
+  ### View Service Logs
+
+  ```bash
+  # Follow logs
+  sudo journalctl -u flowbaker -f
+  
+  # View recent logs
+  sudo journalctl -u flowbaker -n 100
+  ```
+
+  ### Service Management
+
+  ```bash
+  # Start service
+  sudo systemctl start flowbaker
+  
+  # Stop service
+  sudo systemctl stop flowbaker
+  
+  # Restart service
+  sudo systemctl restart flowbaker
+  
+  # Disable auto-start
+  sudo systemctl disable flowbaker
+  ```
+</Accordion>
+
+## Post-Installation
+
+### Verify Installation
+
+Confirm the installation was successful:
+
+```bash
+flowbaker --help
+```
+
+**Expected output:**
+```
+Flowbaker Executor is a workflow automation engine that connects to the Flowbaker platform
+to execute workflows and manage integrations.
+
+Usage:
+  flowbaker [command]
+
+Available Commands:
+  start       Start the executor (auto-setup if needed)
+  status      Show current executor status
+  workspaces  Manage workspace assignments
+  reset       Reset configuration
+  help        Help about any command
+
+Flags:
+      --api-url string   Override API URL
+      --debug            Enable debug logging
+  -h, --help             help for flowbaker
+```
+
+### Initial Setup
+
+Run the setup wizard on first start:
+
+```bash
+flowbaker start
+```
+
+The setup process will:
+1. Generate a unique executor ID
+2. Create Ed25519 and X25519 cryptographic keypairs
+3. Register with the Flowbaker API
+4. Wait for workspace assignment
+
+<Note>
+During setup, you'll receive a registration passcode. Keep this secure and use it to complete registration in your Flowbaker dashboard.
+</Note>
+
+## Configuration Files
+
+Flowbaker stores configuration in the following locations:
+
+| Platform | Configuration Path |
+|----------|-------------------|
+| Linux | `~/.config/flowbaker/config.json` |
+| macOS | `~/Library/Application Support/flowbaker/config.json` |
+| Windows | `%APPDATA%\flowbaker\config.json` |
+| Docker | `/app/.flowbaker/config.json` |
+
+<Warning>
+Configuration files contain sensitive cryptographic keys. Keep them secure and never commit them to version control.
+</Warning>
+
+## Firewall Configuration
+
+Flowbaker requires the following network access:
+
+### Inbound
+- **Port 8081** (TCP) - API server for receiving workflow execution requests
+
+### Outbound
+- **Port 443** (TCP) - HTTPS to Flowbaker API and integration services
+- **Port 80** (TCP) - HTTP (redirects to HTTPS)
+
+### Example UFW Rules (Linux)
+
+```bash
+# Allow inbound on 8081
+sudo ufw allow 8081/tcp
+
+# Allow outbound HTTPS (usually allowed by default)
+sudo ufw allow out 443/tcp
+```
+
+### Example iptables Rules
+
+```bash
+# Allow incoming connections on port 8081
+sudo iptables -A INPUT -p tcp --dport 8081 -j ACCEPT
+
+# Allow outbound HTTPS
+sudo iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
+```
+
+## Kubernetes Deployment
+
+For Kubernetes environments, here's a sample deployment:
+
+```yaml flowbaker-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flowbaker-executor
+  labels:
+    app: flowbaker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flowbaker
+  template:
+    metadata:
+      labels:
+        app: flowbaker
+    spec:
+      containers:
+      - name: flowbaker
+        image: ghcr.io/flowbaker/flowbaker:latest
+        ports:
+        - containerPort: 8081
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /app/.flowbaker
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: config
+        persistentVolumeClaim:
+          claimName: flowbaker-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flowbaker-executor
+spec:
+  selector:
+    app: flowbaker
+  ports:
+  - port: 8081
+    targetPort: 8081
+  type: LoadBalancer
+```
+
+Apply the configuration:
+
+```bash
+kubectl apply -f flowbaker-deployment.yaml
+```
+
+## Upgrade Instructions
+
+### Binary Upgrade
+
+```bash
+# Stop the current executor
+pkill flowbaker  # or sudo systemctl stop flowbaker
+
+# Download the new version
+curl -L https://github.com/flowbaker/flowbaker/releases/latest/download/flowbaker-linux-amd64 -o flowbaker
+chmod +x flowbaker
+sudo mv flowbaker /usr/local/bin/
+
+# Start the executor
+flowbaker start  # or sudo systemctl start flowbaker
+```
+
+### Docker Upgrade
+
+```bash
+# Pull the new image
+docker pull ghcr.io/flowbaker/flowbaker:latest
+
+# Stop and remove old container
+docker stop flowbaker-executor
+docker rm flowbaker-executor
+
+# Start new container
+docker run -d \
+  --name flowbaker-executor \
+  -p 8081:8081 \
+  -v flowbaker-data:/app/.flowbaker \
+  --restart unless-stopped \
+  ghcr.io/flowbaker/flowbaker:latest
+```
+
+### Docker Compose Upgrade
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+<Info>
+Configuration and data are preserved during upgrades when using persistent volumes.
+</Info>
+
+## Uninstallation
+
+### Remove Binary
+
+```bash
+# Stop the executor
+pkill flowbaker
+
+# Remove binary
+sudo rm /usr/local/bin/flowbaker
+
+# Remove configuration (optional)
+rm -rf ~/.config/flowbaker
+```
+
+### Remove Docker Container
+
+```bash
+# Stop and remove container
+docker stop flowbaker-executor
+docker rm flowbaker-executor
+
+# Remove image
+docker rmi ghcr.io/flowbaker/flowbaker:latest
+
+# Remove data volume (optional)
+docker volume rm flowbaker-data
+```
+
+### Remove systemd Service
+
+```bash
+# Stop and disable service
+sudo systemctl stop flowbaker
+sudo systemctl disable flowbaker
+
+# Remove service file
+sudo rm /etc/systemd/system/flowbaker.service
+sudo systemctl daemon-reload
+
+# Remove user and data
+sudo userdel flowbaker
+sudo rm -rf /var/lib/flowbaker
+```
+
+## Troubleshooting
+
+<Accordion title="Binary not found after installation">
+  If you get `command not found` after installation:
+  
+  1. Ensure the binary is in your PATH:
+     ```bash
+     echo $PATH
+     ```
+  2. Move the binary to a directory in PATH:
+     ```bash
+     sudo mv flowbaker /usr/local/bin/
+     ```
+  3. Or add the current directory to PATH:
+     ```bash
+     export PATH=$PATH:$(pwd)
+     ```
+</Accordion>
+
+<Accordion title="Permission denied when running binary">
+  Make the binary executable:
+  
+  ```bash
+  chmod +x flowbaker
+  ```
+  
+  If running as a service, ensure proper ownership:
+  ```bash
+  sudo chown flowbaker:flowbaker /usr/local/bin/flowbaker
+  ```
+</Accordion>
+
+<Accordion title="Docker container exits immediately">
+  Check the container logs:
+  
+  ```bash
+  docker logs flowbaker-executor
+  ```
+  
+  Common issues:
+  - Port 8081 already in use: Change the port mapping `-p 8082:8081`
+  - Missing configuration: Ensure the volume is properly mounted
+  - Permission issues: Check volume permissions
+</Accordion>
+
+<Accordion title="Build fails with missing dependencies">
+  If building from source fails:
+  
+  1. Ensure Go version is 1.25.0 or later:
+     ```bash
+     go version
+     ```
+  2. Clear module cache and retry:
+     ```bash
+     go clean -modcache
+     go mod download
+     go build -o flowbaker cmd/main.go
+     ```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Complete the setup and run your first workflow
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure environment variables and advanced settings
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/cli-reference">
+    Explore all available commands and flags
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Learn about the executor API endpoints
+  </Card>
+</CardGroup>

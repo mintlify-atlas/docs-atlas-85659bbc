@@ -1,0 +1,156 @@
+---
+title: Node API
+description: Workflow node types and configuration
+---
+
+## WorkflowNode
+
+Represents a single node (trigger or action) within a workflow.
+
+### Type Definition
+
+<ParamField path="ID" type="string">
+  Unique identifier for the node
+</ParamField>
+
+<ParamField path="WorkflowID" type="string">
+  ID of the workflow this node belongs to
+</ParamField>
+
+<ParamField path="Name" type="string">
+  Display name of the node
+</ParamField>
+
+<ParamField path="Type" type="NodeType">
+  Type of node (trigger or action)
+</ParamField>
+
+<ParamField path="IntegrationType" type="IntegrationType">
+  The integration this node uses (e.g., "slack", "http", "openai")
+</ParamField>
+
+<ParamField path="SubscribedEvents" type="[]string">
+  Array of event IDs this node is subscribed to
+</ParamField>
+
+<ParamField path="Positions" type="NodePositions">
+  Visual position of the node in the workflow editor
+</ParamField>
+
+<ParamField path="IntegrationSettings" type="map[string]any">
+  Integration-specific configuration settings
+</ParamField>
+
+<ParamField path="Settings" type="NodeSettings">
+  Node execution settings
+</ParamField>
+
+<ParamField path="ExpressionSelectedProperties" type="[]string">
+  Properties that use expression evaluation
+</ParamField>
+
+<ParamField path="ProvidedByAgent" type="[]string">
+  Properties provided by AI agent
+</ParamField>
+
+<ParamField path="Inputs" type="[]NodeInput">
+  Input configurations for this node
+</ParamField>
+
+<ParamField path="UsageContext" type="string">
+  Context in which this node is used (workflow, tool, etc.)
+</ParamField>
+
+<ParamField path="ParentID" type="string">
+  ID of the parent node (for nested nodes)
+</ParamField>
+
+<ParamField path="TriggerNodeOpts" type="TriggerNodeOpts">
+  Additional options for trigger nodes
+</ParamField>
+
+<ParamField path="ActionNodeOpts" type="ActionNodeOpts">
+  Additional options for action nodes
+</ParamField>
+
+## NodeType
+
+Enum representing the type of a workflow node.
+
+### Constants
+
+- `NodeTypeTrigger` - Node that initiates workflow execution
+- `NodeTypeAction` - Node that performs an action
+
+## NodeSettings
+
+Execution settings for a node.
+
+<ParamField path="ReturnErrorAsItem" type="bool">
+  If true, errors are returned as items instead of failing the node
+</ParamField>
+
+<ParamField path="OverwriteExecutionLimit" type="bool">
+  If true, uses custom execution limit instead of workflow default
+</ParamField>
+
+<ParamField path="ExecutionLimit" type="int">
+  Custom execution limit for this node (when OverwriteExecutionLimit is true)
+</ParamField>
+
+## NodeInput
+
+Represents an input connection to a node.
+
+<ParamField path="InputID" type="string">
+  Unique identifier for this input
+</ParamField>
+
+<ParamField path="SubscribedEvents" type="[]string">
+  Array of event IDs this input listens to
+</ParamField>
+
+## NodePositions
+
+Visual position coordinates for the workflow editor.
+
+<ParamField path="XPosition" type="float64">
+  Horizontal position in pixels
+</ParamField>
+
+<ParamField path="YPosition" type="float64">
+  Vertical position in pixels
+</ParamField>
+
+## TriggerNodeOpts
+
+Additional options for trigger nodes.
+
+<ParamField path="EventType" type="IntegrationTriggerEventType">
+  The specific trigger event type for this integration
+</ParamField>
+
+## ActionNodeOpts
+
+Additional options for action nodes.
+
+<ParamField path="ActionType" type="IntegrationActionType">
+  The specific action type for this integration
+</ParamField>
+
+## Methods
+
+### GetInputByID(inputID string)
+
+Retrieves a specific input configuration by ID.
+
+```go
+func (n *WorkflowNode) GetInputByID(inputID string) (NodeInput, bool)
+```
+
+**Parameters:**
+- `inputID` - The ID of the input to retrieve
+
+**Returns:**
+- `NodeInput` - The found input
+- `bool` - `true` if input was found, `false` otherwise

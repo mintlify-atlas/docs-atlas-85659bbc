@@ -1,0 +1,315 @@
+---
+title: flowbaker reset
+description: Reset your executor configuration and start fresh
+---
+
+The `reset` command removes all executor configuration, allowing you to start fresh with a new setup.
+
+## Usage
+
+```bash
+flowbaker reset [flags]
+```
+
+## Description
+
+The reset command:
+- Removes all stored configuration data
+- Clears executor ID and authentication keys
+- Removes workspace assignments
+- Resets the executor to its initial state
+- Requires you to run setup again via `flowbaker start`
+
+<Warning>
+This is a destructive operation. All configuration will be permanently deleted. The executor will need to be re-registered with the Flowbaker platform.
+</Warning>
+
+## Flags
+
+This command supports all [global flags](/cli/overview#global-flags):
+
+- `--debug` - Enable debug logging
+- `--api-url` - Override API URL (doesn't affect reset operation)
+
+## Examples
+
+### Basic Reset
+
+```bash
+flowbaker reset
+```
+
+**Output:**
+
+```
+✅ Configuration reset successfully
+Run 'flowbaker start' to begin setup
+```
+
+### With Debug Logging
+
+```bash
+flowbaker reset --debug
+```
+
+**Output:**
+
+```
+DBG Debug logging enabled
+DBG Loading configuration manager
+DBG Removing configuration file
+DBG Clearing authentication keys
+DBG Removing workspace assignments
+✅ Configuration reset successfully
+Run 'flowbaker start' to begin setup
+```
+
+### Reset and Restart
+
+Reset and immediately start fresh setup:
+
+```bash
+flowbaker reset && flowbaker start
+```
+
+**Output:**
+
+```
+✅ Configuration reset successfully
+Run 'flowbaker start' to begin setup
+Starting initial setup...
+Health check server started on :8081
+
+Welcome to Flowbaker Executor Setup!
+...
+```
+
+## What Gets Reset
+
+### Configuration Data
+
+All locally stored configuration is removed:
+
+- **Executor ID** - The unique identifier for this executor
+- **Ed25519 Keys** - Private and public key pair for authentication
+- **API Base URL** - The Flowbaker API endpoint
+- **Workspace Assignments** - All workspace API keys and mappings
+- **Setup Status** - The flag indicating setup completion
+- **Last Connected** - Connection timestamp
+
+### What Stays
+
+The following are NOT affected by reset:
+
+- **Executor registration** in the Flowbaker dashboard (must be manually removed)
+- **Workflow history** stored in Flowbaker
+- **Application binaries** and installation
+- **Log files** (if configured separately)
+
+## Use Cases
+
+### Troubleshooting Configuration Issues
+
+If the executor is in a broken state:
+
+```bash
+flowbaker reset
+flowbaker start
+```
+
+This provides a clean slate to reconfigure the executor.
+
+### Changing Executor Registration
+
+To register the executor under a different account:
+
+```bash
+# 1. Reset local configuration
+flowbaker reset
+
+# 2. Remove executor from old account's dashboard
+# (manual step in Flowbaker UI)
+
+# 3. Start fresh setup
+flowbaker start
+```
+
+### Migrating to Different Environment
+
+When moving to a different API environment:
+
+```bash
+flowbaker reset
+flowbaker start --api-url https://staging-api.flowbaker.com
+```
+
+### Development and Testing
+
+Quickly reset during development:
+
+```bash
+# Test a feature
+flowbaker start
+# ... run tests ...
+
+# Reset for next test
+flowbaker reset
+```
+
+## Before You Reset
+
+### Check Current Status
+
+Review what will be removed:
+
+```bash
+flowbaker status
+```
+
+**Output:**
+
+```
+✅ Executor is set up and ready
+   Executor ID: exec_abc123def456
+   Workspaces (2): Production, Staging
+   API URL: https://api.flowbaker.com
+   Last connected: 2026-03-04 14:32:15
+```
+
+Make note of:
+- Executor ID (for dashboard cleanup)
+- Workspace assignments
+- API URL (if custom)
+
+### Backup Configuration
+
+If you might need to restore, backup the configuration:
+
+```bash
+# Backup configuration (location varies by OS)
+cp ~/.flowbaker/config.json ~/.flowbaker/config.json.backup
+```
+
+<Note>
+The exact configuration file location depends on your operating system and installation method. Use `--debug` flag to see the configuration file path.
+</Note>
+
+### Stop the Executor
+
+Ensure the executor is not running:
+
+```bash
+# If running in foreground, press Ctrl+C
+# If running as service:
+sudo systemctl stop flowbaker
+```
+
+## After Reset
+
+### Verify Reset
+
+Confirm the reset was successful:
+
+```bash
+flowbaker status
+```
+
+**Output:**
+
+```
+❌ Executor is not set up
+Run 'flowbaker start' to begin setup
+```
+
+### Start Fresh Setup
+
+Begin the setup process:
+
+```bash
+flowbaker start
+```
+
+Follow the setup wizard to:
+1. Register a new executor ID
+2. Generate new authentication keys
+3. Configure workspace assignments
+
+### Clean Up Dashboard
+
+Manually remove the old executor from your Flowbaker dashboard:
+
+1. Log in to Flowbaker
+2. Navigate to Executors
+3. Find the old executor by its ID
+4. Delete or deactivate it
+
+## Error Handling
+
+### Failed to Reset
+
+```bash
+flowbaker reset
+```
+
+**Output:**
+
+```
+FATAL Failed to reset configuration error="permission denied"
+```
+
+**Solution:**
+
+- Check file permissions on configuration directory
+- Ensure no other process has the config file open
+- Try running with elevated permissions if needed
+
+### Already Reset
+
+Resetting when no configuration exists:
+
+```bash
+flowbaker reset
+```
+
+**Output:**
+
+```
+✅ Configuration reset successfully
+Run 'flowbaker start' to begin setup
+```
+
+<Note>
+The reset command succeeds even if there's no configuration to reset.
+</Note>
+
+## Safety Considerations
+
+### No Confirmation Prompt
+
+The reset command executes immediately without confirmation. Be certain before running:
+
+```bash
+# There is NO "Are you sure?" prompt
+flowbaker reset  # Executes immediately
+```
+
+### Cannot Be Undone
+
+Reset is permanent. Configuration cannot be recovered unless:
+
+- You have a backup of the configuration file
+- You stored the executor ID and keys separately
+
+### Active Workflows
+
+Resetting does not affect:
+
+- Workflows currently executing (will continue until completion or failure)
+- Workflow history stored in Flowbaker
+- Scheduled workflows (but they won't execute on this executor)
+
+## See Also
+
+- [start](/cli/start) - Start executor and run setup
+- [status](/cli/status) - Check current configuration
+- [workspaces](/cli/workspaces) - View workspace assignments

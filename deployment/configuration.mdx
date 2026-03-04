@@ -1,0 +1,400 @@
+---
+title: 'Configuration'
+description: 'Configure Flowbaker executor settings and behavior'
+---
+
+## Overview
+
+Flowbaker uses [Viper](https://github.com/spf13/viper) for configuration management, supporting both JSON configuration files and environment variables.
+
+## Configuration File
+
+### Location
+
+Flowbaker searches for `config.json` in the following locations (in order):
+
+1. Current directory: `./config.json`
+2. User home directory: `~/.flowbaker/config.json`
+
+The configuration file is automatically created during first-time setup.
+
+### Format
+
+```json
+{
+  "executor_id": "exec_abc123xyz",
+  "executor_name": "my-executor",
+  "address": "http://localhost:8081",
+  "api_base_url": "https://api.flowbaker.io",
+  "x25519_private_key": "base64_encoded_key",
+  "x25519_public_key": "base64_encoded_key",
+  "ed25519_private_key": "base64_encoded_key",
+  "ed25519_public_key": "base64_encoded_key",
+  "static_api_signature_public_key": "",
+  "setup_complete": true,
+  "workspace_assignments": [
+    {
+      "workspace_id": "workspace_123",
+      "workspace_name": "My Workspace",
+      "api_key": "base64_encoded_key"
+    }
+  ],
+  "enable_workspace_registration": true,
+  "enable_static_passcode": false,
+  "static_passcode": "",
+  "skip_workspace_assignments": false,
+  "last_connected": "2026-03-04T10:00:00Z"
+}
+```
+
+### Configuration Structure
+
+#### ExecutorConfig
+
+The main configuration structure defined in `pkg/domain/config_manager.go`:
+
+```go
+type ExecutorConfig struct {
+    ExecutorID   string `mapstructure:"executor_id"`
+    ExecutorName string `mapstructure:"executor_name"`
+    Address      string `mapstructure:"address"`
+    APIBaseURL   string `mapstructure:"api_base_url"`
+
+    // Crypto keys
+    X25519PrivateKey  string `mapstructure:"x25519_private_key"`
+    X25519PublicKey   string `mapstructure:"x25519_public_key"`
+    Ed25519PrivateKey string `mapstructure:"ed25519_private_key"`
+    Ed25519PublicKey  string `mapstructure:"ed25519_public_key"`
+
+    // API signature verification
+    StaticAPISignaturePublicKey string `mapstructure:"static_api_signature_public_key"`
+
+    // Setup and workspace management
+    SetupComplete               bool                  `mapstructure:"setup_complete"`
+    WorkspaceAssignments        []WorkspaceAssignment `mapstructure:"workspace_assignments"`
+    EnableWorkspaceRegistration bool                  `mapstructure:"enable_workspace_registration"`
+    EnableStaticPasscode        bool                  `mapstructure:"enable_static_passcode"`
+    StaticPasscode              string                `mapstructure:"static_passcode"`
+    SkipWorkspaceAssignments    bool                  `mapstructure:"skip_workspace_assignments"`
+
+    LastConnected string `mapstructure:"last_connected"`
+}
+```
+
+## Configuration Fields
+
+### Executor Identity
+
+#### executor_id
+- **Type**: string
+- **Required**: Yes (auto-generated)
+- **Description**: Unique identifier for the executor
+- **Example**: `"exec_abc123xyz"`
+
+#### executor_name
+- **Type**: string
+- **Required**: Yes
+- **Default**: `"flowbaker-executor"`
+- **Description**: Human-readable name for the executor
+- **Example**: `"production-executor"`
+
+#### address
+- **Type**: string
+- **Required**: Yes
+- **Default**: `"http://localhost:8081"`
+- **Description**: The URL where the executor is accessible
+- **Example**: `"https://executor.example.com"`
+
+#### api_base_url
+- **Type**: string
+- **Required**: Yes
+- **Default**: `"https://api.flowbaker.io"`
+- **Description**: Flowbaker API endpoint
+- **Example**: `"https://api.flowbaker.io"`
+
+### Cryptographic Keys
+
+All keys are automatically generated during setup using X25519 (encryption) and Ed25519 (signatures).
+
+#### x25519_private_key / x25519_public_key
+- **Type**: string (base64 encoded)
+- **Required**: Yes (auto-generated)
+- **Description**: X25519 key pair for end-to-end encryption
+
+#### ed25519_private_key / ed25519_public_key
+- **Type**: string (base64 encoded)
+- **Required**: Yes (auto-generated)
+- **Description**: Ed25519 key pair for API request signing
+
+#### static_api_signature_public_key
+- **Type**: string (base64 encoded)
+- **Required**: No
+- **Description**: Public key for static API signature verification (alternative to workspace-specific keys)
+- **Use case**: When `STATIC_API_SIGNATURE_PUBLIC_KEY` environment variable is set
+
+### Workspace Management
+
+#### setup_complete
+- **Type**: boolean
+- **Required**: Yes
+- **Default**: `false`
+- **Description**: Indicates if initial setup has been completed
+
+#### workspace_assignments
+- **Type**: array of WorkspaceAssignment objects
+- **Required**: No
+- **Description**: List of workspaces connected to this executor
+- **Structure**:
+  ```json
+  {
+    "workspace_id": "workspace_123",
+    "workspace_name": "My Workspace",
+    "api_key": "base64_encoded_key"
+  }
+  ```
+
+#### enable_workspace_registration
+- **Type**: boolean
+- **Required**: No
+- **Default**: `true`
+- **Description**: Allow workspaces to register with this executor
+- **Use case**: Disable for locked-down production environments
+
+#### enable_static_passcode
+- **Type**: boolean
+- **Required**: No
+- **Default**: `false`
+- **Description**: Enable static passcode authentication for workspace registration
+
+#### static_passcode
+- **Type**: string
+- **Required**: No
+- **Description**: Static passcode for workspace registration when enabled
+
+#### skip_workspace_assignments
+- **Type**: boolean
+- **Required**: No
+- **Default**: `false`
+- **Description**: Skip workspace assignment validation (use with static API key)
+
+### Metadata
+
+#### last_connected
+- **Type**: string (RFC3339 format)
+- **Required**: No
+- **Description**: Timestamp of last successful API connection
+- **Example**: `"2026-03-04T10:00:00Z"`
+
+## Environment Variable Mapping
+
+Viper automatically maps environment variables with the `FLOWBAKER_` prefix:
+
+```go
+v.SetEnvPrefix("FLOWBAKER")
+v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+```
+
+### Explicit Mappings
+
+| Config Key | Environment Variable |
+|------------|---------------------|
+| `executor_id` | `FLOWBAKER_EXECUTOR_ID` |
+| `executor_name` | `FLOWBAKER_EXECUTOR_NAME` |
+| `address` | `FLOWBAKER_EXECUTOR_ADDRESS` |
+| `api_base_url` | `FLOWBAKER_API_URL` |
+| `x25519_private_key` | `FLOWBAKER_X25519_PRIVATE_KEY` |
+| `x25519_public_key` | `FLOWBAKER_X25519_PUBLIC_KEY` |
+| `ed25519_private_key` | `FLOWBAKER_ED25519_PRIVATE_KEY` |
+| `ed25519_public_key` | `FLOWBAKER_ED25519_PUBLIC_KEY` |
+| `static_api_signature_public_key` | `STATIC_API_SIGNATURE_PUBLIC_KEY` |
+| `setup_complete` | `FLOWBAKER_SETUP_COMPLETE` |
+| `enable_workspace_registration` | `FLOWBAKER_ENABLE_WORKSPACE_REGISTRATION` |
+| `enable_static_passcode` | `FLOWBAKER_ENABLE_STATIC_PASSCODE` |
+| `static_passcode` | `FLOWBAKER_STATIC_PASSCODE` |
+| `skip_workspace_assignments` | `FLOWBAKER_SKIP_WORKSPACE_ASSIGNMENTS` |
+
+See [Environment Variables](/deployment/environment-variables) for complete documentation.
+
+## Configuration Precedence
+
+Flowbaker follows this order of precedence (highest to lowest):
+
+1. **Environment variables** (e.g., `FLOWBAKER_EXECUTOR_NAME`)
+2. **Configuration file** (`~/.flowbaker/config.json`)
+3. **Default values**
+
+## Managing Configuration
+
+### View Current Configuration
+
+```bash
+flowbaker status
+```
+
+### Reset Configuration
+
+```bash
+flowbaker reset
+```
+
+This will:
+1. Delete `~/.flowbaker/config.json`
+2. Clear all in-memory configuration
+3. Reset to default values
+
+### Manual Configuration Editing
+
+```bash
+# Edit configuration file
+vim ~/.flowbaker/config.json
+
+# Restart executor to apply changes
+systemctl restart flowbaker  # systemd
+# or
+docker restart flowbaker-executor  # Docker
+```
+
+**Warning**: Manually editing cryptographic keys can break connectivity. Use `flowbaker reset` and re-run setup if issues occur.
+
+### Backup Configuration
+
+```bash
+# Backup
+cp ~/.flowbaker/config.json ~/.flowbaker/config.json.backup
+
+# Restore
+cp ~/.flowbaker/config.json.backup ~/.flowbaker/config.json
+```
+
+## Configuration Security
+
+### File Permissions
+
+Flowbaker automatically sets secure permissions:
+
+```bash
+# Directory permissions: 0700 (owner read/write/execute only)
+ls -ld ~/.flowbaker
+drwx------ flowbaker flowbaker ~/.flowbaker
+
+# File permissions: 0600 (owner read/write only)
+ls -l ~/.flowbaker/config.json
+-rw------- flowbaker flowbaker config.json
+```
+
+### Sensitive Fields
+
+These fields contain sensitive data and should be protected:
+
+- `x25519_private_key`
+- `ed25519_private_key`
+- `static_passcode`
+- `workspace_assignments[].api_key`
+
+### Best Practices
+
+1. **Never commit** `config.json` to version control
+2. **Use environment variables** for secrets in containerized environments
+3. **Rotate keys** periodically by running `flowbaker reset` and re-registering
+4. **Backup securely**: Encrypt configuration backups
+5. **Limit access**: Only the executor user should have read access
+
+## Configuration Examples
+
+### Development
+
+```json
+{
+  "executor_name": "dev-executor",
+  "address": "http://localhost:8081",
+  "api_base_url": "https://api.flowbaker.io",
+  "enable_workspace_registration": true
+}
+```
+
+### Production
+
+```json
+{
+  "executor_name": "production-executor",
+  "address": "https://executor.example.com",
+  "api_base_url": "https://api.flowbaker.io",
+  "enable_workspace_registration": false,
+  "skip_workspace_assignments": false
+}
+```
+
+### Static API Key Mode
+
+```json
+{
+  "executor_name": "secure-executor",
+  "address": "https://executor.example.com",
+  "api_base_url": "https://api.flowbaker.io",
+  "static_api_signature_public_key": "base64_encoded_public_key",
+  "skip_workspace_assignments": true,
+  "enable_workspace_registration": false
+}
+```
+
+## Default Values
+
+Set in `setDefaults()` function:
+
+```go
+func setDefaults(v *viper.Viper) {
+    v.SetDefault("executor_name", "flowbaker-executor")
+    v.SetDefault("address", "http://localhost:8081")
+    v.SetDefault("api_base_url", "https://api.flowbaker.io")
+    v.SetDefault("setup_complete", false)
+    v.SetDefault("enable_workspace_registration", true)
+    v.SetDefault("enable_static_passcode", false)
+    v.SetDefault("skip_workspace_assignments", false)
+}
+```
+
+## Troubleshooting
+
+### Configuration File Not Found
+
+```bash
+# Flowbaker will log this message:
+# "Config file not found, using environment variables and defaults"
+
+# Solution: Run first-time setup
+flowbaker start
+```
+
+### Invalid Configuration
+
+```bash
+# Check for JSON syntax errors
+jq . ~/.flowbaker/config.json
+
+# Reset if corrupted
+flowbaker reset
+```
+
+### Permission Denied
+
+```bash
+# Fix permissions
+chmod 700 ~/.flowbaker
+chmod 600 ~/.flowbaker/config.json
+```
+
+### Environment Variables Not Working
+
+```bash
+# Verify environment variable is set
+echo $FLOWBAKER_EXECUTOR_NAME
+
+# Check Viper is reading it
+FLOWBAKER_EXECUTOR_NAME=test-executor flowbaker status
+```
+
+## Next Steps
+
+- [Environment Variables Reference](/deployment/environment-variables)
+- [Docker Deployment](/deployment/docker)
+- [Binary Deployment](/deployment/binary)
