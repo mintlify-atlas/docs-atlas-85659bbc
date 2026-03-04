@@ -1,0 +1,158 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "Flowbaker",
+  "projectDescription": "Self-hosted workflow automation executor that connects to Flowbaker platform to run workflows with 40+ integrations.",
+  "theme": "aspen",
+  "primaryColor": "#f2b827",
+  "lightColor": "#7e5219",
+  "darkColor": "#ad811c",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/workflows",
+              "concepts/nodes",
+              "concepts/integrations",
+              "concepts/executors"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/binary",
+              "deployment/configuration",
+              "deployment/environment-variables"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/ai-agents",
+              "integrations/communication",
+              "integrations/development",
+              "integrations/storage",
+              "integrations/utilities"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/monitoring",
+              "operations/security",
+              "operations/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "AI SDK",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "ai-sdk/introduction",
+              "ai-sdk/getting-started"
+            ]
+          },
+          {
+            "group": "Core Components",
+            "pages": [
+              "ai-sdk/agent",
+              "ai-sdk/providers",
+              "ai-sdk/memory",
+              "ai-sdk/tools"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "ai-sdk/examples/basic-agent",
+              "ai-sdk/examples/custom-tools",
+              "ai-sdk/examples/memory-storage"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/start",
+              "cli/status",
+              "cli/reset",
+              "cli/workspaces"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Domain Types",
+            "pages": [
+              "api/workflow",
+              "api/node",
+              "api/integration",
+              "api/executor"
+            ]
+          },
+          {
+            "group": "AI SDK API",
+            "pages": [
+              "api/ai-sdk/agent-api",
+              "api/ai-sdk/provider-api",
+              "api/ai-sdk/memory-api",
+              "api/ai-sdk/tool-api"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Self-hosted workflow automation executor",
+    "40+ pre-built integrations (Discord, GitHub, Slack, Stripe, etc.)",
+    "AI agent support with multiple providers (OpenAI, Anthropic, Gemini)",
+    "Built-in AI SDK for creating custom AI agents",
+    "Memory management for AI conversations",
+    "Docker and binary deployment options",
+    "Secure workspace authentication",
+    "CLI for executor management"
+  ],
+  "publicApiSurface": [
+    "flowbaker start - Start the executor",
+    "flowbaker status - Check executor status",
+    "flowbaker reset - Reset configuration",
+    "flowbaker workspaces - Manage workspace connections",
+    "agent.New() - Create AI agent",
+    "agent.Chat() - Chat with streaming",
+    "agent.ChatSync() - Synchronous chat",
+    "provider.OpenAI - OpenAI provider",
+    "provider.Anthropic - Anthropic provider",
+    "provider.Gemini - Gemini provider",
+    "memory.Store - Memory interface",
+    "tool.Tool - Tool interface",
+    "Workflow domain type",
+    "WorkflowNode domain type",
+    "Integration types and handlers"
+  ]
+}
